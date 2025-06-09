@@ -213,6 +213,10 @@ def gemini_call(
                 time.sleep(wait_time)
                 retry_count += 1
                 continue
+            except ValueError as e:
+                long_answers = ["_"]
+                short_answers = [-1]
+                break
 
         results_dataset = results_dataset.map(
             lambda x, idx: update_map(
