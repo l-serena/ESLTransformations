@@ -172,42 +172,12 @@ def gemini_call(
         max_tokens=2048,
         max_retries=5,
     ):
-
-    safety_settings=[
-    {
-        "category": "HARM_CATEGORY_DANGEROUS",
-        "threshold": "BLOCK_NONE",
-    },
-    {
-        "category": "HARM_CATEGORY_HARASSMENT",
-        "threshold": "BLOCK_NONE",
-    },
-    {
-        "category": "HARM_CATEGORY_HATE_SPEECH",
-        "threshold": "BLOCK_NONE",
-    },
-    {
-        "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-        "threshold": "BLOCK_NONE",
-    },
-    {
-        "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-        "threshold": "BLOCK_NONE",
-    },
-    {
-        "category": "OTHER",
-        "threshold": "BLOCK_NONE",
-    }
-    ]
     
     model = genai.GenerativeModel(
             args.model,
             system_instruction="Do not reason for too long. If the question is a multiple choice question, answer with the option letter. If none of the given options match, you may guess or say 'none of the above.' Start your final sentence with 'The answer is '.",
-            safety_settings=safety_settings,
     )
 
-
-    
     noanswer_indices = []
 
     for idx, instance in enumerate(results_dataset):
@@ -231,7 +201,16 @@ def gemini_call(
         while True:
             try:
                 response = model.generate_content(x)
-                long_answers, short_answers = extract_answer(response)
+                
+                # check if response is blocked
+                if not response.candidates:
+                    log(f"Response blocked: {response.prompt_feedback}", level='error')
+                    long_answers = ["_"]
+                    short_answers = [-1]
+                
+                else:
+                    long_answers, short_answers = extract_answer(response)
+                
                 break
             except (ResourceExhausted, InternalServerError, DeadlineExceeded, ValueError) as e:
                 if retry_count >= max_retries:
@@ -243,10 +222,7 @@ def gemini_call(
                 time.sleep(wait_time)
                 retry_count += 1
                 continue
-            except ValueError as e:
-                long_answers = ["_"]
-                short_answers = [-1]
-                break
+
 
         results_dataset = results_dataset.map(
             lambda x, idx: update_map(
