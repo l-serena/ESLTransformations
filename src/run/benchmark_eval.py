@@ -177,7 +177,7 @@ def gemini_call(
             args.model,
             system_instruction="Do not reason for too long. If the question is a multiple choice question, answer with the option letter. If none of the given options match, you may guess or say 'none of the above.' Start your final sentence with 'The answer is '.",
     )
-    
+
     noanswer_indices = []
 
     for idx, instance in enumerate(results_dataset):
@@ -201,7 +201,16 @@ def gemini_call(
         while True:
             try:
                 response = model.generate_content(x)
-                long_answers, short_answers = extract_answer(response)
+                
+                # check if response is blocked
+                if not response.candidates:
+                    log(f"Response blocked: {response.prompt_feedback}", level='error')
+                    long_answers = ["_"]
+                    short_answers = [-1]
+                
+                else:
+                    long_answers, short_answers = extract_answer(response)
+                
                 break
             except (ResourceExhausted, InternalServerError, DeadlineExceeded, ValueError) as e:
                 if retry_count >= max_retries:
@@ -213,10 +222,7 @@ def gemini_call(
                 time.sleep(wait_time)
                 retry_count += 1
                 continue
-            except ValueError as e:
-                long_answers = ["_"]
-                short_answers = [-1]
-                break
+
 
         results_dataset = results_dataset.map(
             lambda x, idx: update_map(
