@@ -1,4 +1,5 @@
 # Key maps
+# Key maps
 QUESTION_KEY_ID = {
     'mmlu': 'question',
     'gsm8k': 'question',
@@ -6,6 +7,11 @@ QUESTION_KEY_ID = {
     'hellaswag': 'ctx',
     'truthfulqa': 'question',
     'winogrande': 'sentence',
+
+    # Open-ended datasets
+    'ifeval': 'prompt',
+    'alpacafarm': 'instruction',
+    'mt-bench': 'turns',  
 }
 
 CHOICE_KEY_ID = {
