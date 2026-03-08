@@ -42,10 +42,9 @@ def _select(ds, rerun_index=None, start_idx=None):
         ds = ds.select(rerun_index)
     return ds
 
-
 def load_ifeval(batch_size, rerun_index=None, start_idx=None):
     data_path = os.environ.get("DATA_PATH", ".")
-    path = os.path.join(data_path, "datasets", "ifeval", "test.jsonl")
+    path = os.path.join(data_path, "datasets", "ifeval_input_data.jsonl")
     ds = load_dataset("json", data_files={"test": path}, split="test")
     ds = _select(ds, rerun_index, start_idx)
     return DataLoader(ds, batch_size=batch_size, shuffle=False)
@@ -53,7 +52,7 @@ def load_ifeval(batch_size, rerun_index=None, start_idx=None):
 
 def load_alpacafarm(batch_size, rerun_index=None, start_idx=None):
     data_path = os.environ.get("DATA_PATH", ".")
-    path = os.path.join(data_path, "datasets", "alpacafarm", "test.jsonl")
+    path = os.path.join(data_path, "datasets", "alpacafarm_unlabeled.jsonl")
     ds = load_dataset("json", data_files={"test": path}, split="test")
     ds = _select(ds, rerun_index, start_idx)
     return DataLoader(ds, batch_size=batch_size, shuffle=False)
@@ -61,11 +60,10 @@ def load_alpacafarm(batch_size, rerun_index=None, start_idx=None):
 
 def load_mt_bench(batch_size, rerun_index=None, start_idx=None):
     data_path = os.environ.get("DATA_PATH", ".")
-    path = os.path.join(data_path, "datasets", "mt-bench", "test.jsonl")
+    path = os.path.join(data_path, "datasets", "mtbench_question.jsonl")
     ds = load_dataset("json", data_files={"test": path}, split="test")
     ds = _select(ds, rerun_index, start_idx)
     return DataLoader(ds, batch_size=batch_size, shuffle=False)
-
 
 # Optional: placeholders if you accidentally try to run benchmark_eval with open-ended datasets.
 # Keep these here only to fail with a clear error message.
