@@ -42,9 +42,10 @@ def _select(ds, rerun_index=None, start_idx=None):
         ds = ds.select(rerun_index)
     return ds
 
+
 def load_ifeval(batch_size, rerun_index=None, start_idx=None):
     data_path = os.environ.get("DATA_PATH", ".")
-    path = os.path.join(data_path, "datasets", "ifeval_input_data.jsonl")
+    path = os.path.join(data_path, "datasets", "ifeval", "test.jsonl")
     ds = load_dataset("json", data_files={"test": path}, split="test")
     ds = _select(ds, rerun_index, start_idx)
     return DataLoader(ds, batch_size=batch_size, shuffle=False)
@@ -52,7 +53,7 @@ def load_ifeval(batch_size, rerun_index=None, start_idx=None):
 
 def load_alpacafarm(batch_size, rerun_index=None, start_idx=None):
     data_path = os.environ.get("DATA_PATH", ".")
-    path = os.path.join(data_path, "datasets", "alpacafarm_unlabeled.jsonl")
+    path = os.path.join(data_path, "datasets", "alpacafarm", "sample50.jsonl")
     ds = load_dataset("json", data_files={"test": path}, split="test")
     ds = _select(ds, rerun_index, start_idx)
     return DataLoader(ds, batch_size=batch_size, shuffle=False)
@@ -60,91 +61,60 @@ def load_alpacafarm(batch_size, rerun_index=None, start_idx=None):
 
 def load_mt_bench(batch_size, rerun_index=None, start_idx=None):
     data_path = os.environ.get("DATA_PATH", ".")
-    path = os.path.join(data_path, "datasets", "mtbench_question.jsonl")
+    path = os.path.join(data_path, "datasets", "mt-bench", "test.jsonl")
     ds = load_dataset("json", data_files={"test": path}, split="test")
     ds = _select(ds, rerun_index, start_idx)
     return DataLoader(ds, batch_size=batch_size, shuffle=False)
 
-# Optional: placeholders if you accidentally try to run benchmark_eval with open-ended datasets.
-# Keep these here only to fail with a clear error message.
-def openended_load_test_data(*args, **kwargs):
-    raise NotImplementedError(
-        "Open-ended dataset eval is not implemented via MAIN_FUNCS. "
-        "Use a dedicated evaluator (e.g., judge model / rubric / task-specific scoring)."
-    )
-
-
-def openended_extract_answer(*args, **kwargs):
-    raise NotImplementedError(
-        "Open-ended dataset answer extraction is not applicable. "
-        "Use a dedicated evaluator (e.g., judge model / rubric / task-specific scoring)."
-    )
-
 
 # Function definition of each benchmark
-# Tuple: (load_test_data_func, extract_answer_func, dataset_size, question_key)
 MAIN_FUNCS = {
     "mmlu": (mmlu_load_test_data, mmlu_extract_answer, 13436, "question"),
     "gsm8k": (gsm8k_load_test_data, gsm8k_extract_answer, 1319, "question"),
     "arc": (arc_load_test_data, arc_extract_answer, 1172, "question"),
     "hellaswag": (hellaswag_load_test_data, hellaswag_extract_answer, 10042, "ctx"),
-    "truthful_qa": (truthfulqa_load_test_data, truthfulqa_extract_answer, 817, "question"),
-    "winogrande": (winogrande_load_test_data, winogrande_extract_answer, 1267, "sentence"),
-
-    # Open-ended datasets (placeholders only; see functions above)
-    "ifeval": (openended_load_test_data, openended_extract_answer, None, "prompt"),
-    "alpacafarm": (openended_load_test_data, openended_extract_answer, None, "instruction"),
-    "mt-bench": (openended_load_test_data, openended_extract_answer, None, "turns"),
+    "truthful_qa": (
+        truthfulqa_load_test_data,
+        truthfulqa_extract_answer,
+        817,
+        "question",
+    ),
+    "winogrande": (
+        winogrande_load_test_data,
+        winogrande_extract_answer,
+        1267,
+        "sentence",
+    ),
 }
 
 
 # Test datasets
 LOAD_TEST_DATASET = {
-    "mmlu": load_mmlu_test_dataset(),
-    "gsm8k": load_dataset("openai/gsm8k", "main", split="test", cache_dir=os.environ.get("DATA_DIR", None)),
-    "arc": load_dataset("allenai/ai2_arc", "ARC-Challenge", split="test", cache_dir=os.environ.get("DATA_DIR", None)),
-    "hellaswag": load_dataset("Rowan/hellaswag", split="validation", cache_dir=os.environ.get("DATA_DIR", None)),
-    "truthfulqa": load_dataset(
-        "truthfulqa/truthful_qa", "multiple_choice", split="validation", cache_dir=os.environ.get("DATA_DIR", None)
-    ),
-    "winogrande": load_dataset(
-        "allenai/winogrande",
-        split="validation",
-        trust_remote_code=True,
-        name="winogrande_m",
-        cache_dir=os.environ.get("DATA_DIR", None),
-    ),
+    'mmlu': load_mmlu_test_dataset(),
+    'gsm8k': load_dataset('openai/gsm8k', 'main', split='test', cache_dir=os.environ.get("DATA_DIR", None)),
+    'arc': load_dataset('allenai/ai2_arc', 'ARC-Challenge', split='test', cache_dir=os.environ.get("DATA_DIR", None)),
+    'hellaswag': load_dataset('Rowan/hellaswag', split='validation', cache_dir=os.environ.get("DATA_DIR", None)),
+    'truthfulqa': load_dataset('truthfulqa/truthful_qa', 'multiple_choice', split='validation', cache_dir=os.environ.get("DATA_DIR", None)),
+    'winogrande': load_dataset('allenai/winogrande', split='validation', trust_remote_code=True, name='winogrande_m', cache_dir=os.environ.get("DATA_DIR", None)),
 
-    # Open-ended datasets (local JSONL)
-    "ifeval": load_dataset(
-        "json",
-        data_files={"test": os.path.join(os.environ.get("DATA_PATH", "."), "datasets", "ifeval", "test.jsonl")},
-        split="test",
-    ),
-    "alpacafarm": load_dataset(
-        "json",
-        data_files={"test": os.path.join(os.environ.get("DATA_PATH", "."), "datasets", "alpacafarm", "test.jsonl")},
-        split="test",
-    ),
-    "mt-bench": load_dataset(
-        "json",
-        data_files={"test": os.path.join(os.environ.get("DATA_PATH", "."), "datasets", "mt-bench", "test.jsonl")},
-        split="test",
-    ),
+    # Open-ended (local JSONL)
+    'ifeval': load_dataset("json", data_files={"test": os.path.join(os.environ.get("DATA_PATH", "."), "datasets", "ifeval", "test.jsonl")}, split="test"),
+    'alpacafarm': load_dataset("json", data_files={"test": os.path.join(os.environ.get("DATA_PATH", "."), "datasets", "alpacafarm", "test.jsonl")}, split="test"),
+    'mt-bench': load_dataset("json", data_files={"test": os.path.join(os.environ.get("DATA_PATH", "."), "datasets", "mt-bench", "test.jsonl")}, split="test"),
 }
 
 
 # Dataloaders
 DATASET_MAPPING = {
-    "mmlu": mmlu_dataloader,
-    "gsm8k": gsm8k_dataloader,
-    "arc": arc_dataloader,
-    "hellaswag": hellaswag_dataloader,
-    "truthfulqa": truthfulqa_dataloader,
-    "winogrande": winogrande_dataloader,
+    'mmlu': mmlu_dataloader,
+    'gsm8k': gsm8k_dataloader,
+    'arc': arc_dataloader,
+    'hellaswag': hellaswag_dataloader,
+    'truthfulqa': truthfulqa_dataloader,
+    'winogrande': winogrande_dataloader,
 
-    # Open-ended datasets
-    "ifeval": load_ifeval,
-    "alpacafarm": load_alpacafarm,
-    "mt-bench": load_mt_bench,
+    # Open-ended
+    'ifeval': load_ifeval,
+    'alpacafarm': load_alpacafarm,
+    'mt-bench': load_mt_bench,
 }

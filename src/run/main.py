@@ -23,48 +23,76 @@ from utils.filesys_utils import pickle_load, pickle_save
 choice_transform_dataset = []
 
 
+def _is_openai_model(model_name: str) -> bool:
+    """
+    Heuristic: treat OpenAI hosted models (gpt-*, o1-*, o3-*) as OpenAI API models.
+    """
+    if model_name is None:
+        return False
+    return model_name.startswith(("gpt-", "o1-", "o3-"))
+
+
 def main():
     # Initialize arguments
     generation_config, model_config, dataset_config, task_config, save_config = parse_args()
 
     if dataset_config.dataset_name is None:
-        raise AssertionError(colorstr("red", "Dataset name should be specified!"))
+        raise AssertionError(colorstr('red', 'Dataset name should be specified!'))
 
-    if task_config.task_name == "L1" and task_config.cefr_level is None:
-        raise AssertionError(colorstr("red", "You should specify cefr level in order to change L1."))
+    # NOTE:
+    # - Keep original L1 constraint ONLY for the benchmark L1 mode (task_name == 'L1').
+    # - openended_l1 should NOT require cefr_level.
+    if task_config.task_name == 'L1' and task_config.cefr_level is None:
+        raise AssertionError(colorstr('red', 'You should specify cefr level in order to change L1.'))
 
-    if task_config.task_name == "L1":
+    # Logging
+    if task_config.task_name == 'L1':
         log(
-            f"Dataset: {colorstr(dataset_config.dataset_name)}, Task: {colorstr(task_config.task_name)}, "
-            f"l1: {colorstr(task_config.l1)}, cefr: {colorstr(task_config.cefr_level)}, "
-            f"Rerun: {colorstr(bool(generation_config.rerun))}"
+            f'Dataset: {colorstr(dataset_config.dataset_name)}, Task: {colorstr(task_config.task_name)}, '
+            f'l1: {colorstr(task_config.l1)}, cefr: {colorstr(task_config.cefr_level)}, '
+            f'Rerun: {colorstr(bool(generation_config.rerun))}'
         )
-    elif task_config.task_name == "english_dialect":
+    elif task_config.task_name == 'openended_l1':
         log(
-            f"Dataset: {colorstr(dataset_config.dataset_name)}, Task: {colorstr(task_config.task_name)}, "
-            f"dialect: {colorstr(task_config.dialect)}, Rerun: {colorstr(bool(generation_config.rerun))}"
+            f'Dataset: {colorstr(dataset_config.dataset_name)}, Task: {colorstr(task_config.task_name)}, '
+            f'l1: {colorstr(task_config.l1)}, Rerun: {colorstr(bool(generation_config.rerun))}'
         )
-    elif task_config.task_name == "cefr":
+    elif task_config.task_name == 'english_dialect':
         log(
-            f"Dataset: {colorstr(dataset_config.dataset_name)}, Task: {colorstr(task_config.task_name)}, "
-            f"CEFR level: {colorstr(task_config.cefr_level)}, Rerun: {colorstr(bool(generation_config.rerun))}"
+            f'Dataset: {colorstr(dataset_config.dataset_name)}, Task: {colorstr(task_config.task_name)}, '
+            f'dialect: {colorstr(task_config.dialect)}, Rerun: {colorstr(bool(generation_config.rerun))}'
+        )
+    elif task_config.task_name in ['cefr', 'openended_cefr']:
+        log(
+            f'Dataset: {colorstr(dataset_config.dataset_name)}, Task: {colorstr(task_config.task_name)}, '
+            f'CEFR level: {colorstr(task_config.cefr_level)}, Rerun: {colorstr(bool(generation_config.rerun))}'
         )
 
     os.makedirs(save_config.save_path, exist_ok=True)
 
     if dataset_config.sampling is True:
-        save_config.file_name += "_sampling"
+        save_config.file_name += '_sampling'
 
-    # Intialize model
+    # Initialize model client
     client = return_model(model_config=model_config)
-    if model_config.model_name.split("/")[0] != "azure":
+
+    # Decide routing (OpenAI API vs HF/vLLM-style)
+    use_openai_api = _is_openai_model(model_config.model_name)
+    is_hf_model_id = (model_config.model_name is not None) and ("/" in model_config.model_name)
+
+    # Tokenizer only needed for HF/vLLM-style transformation() (tokenizer.apply_chat_template)
+    tokenizer = None
+    if (not use_openai_api) and is_hf_model_id and (model_config.model_name.split('/')[0] != 'azure'):
         tokenizer = AutoTokenizer.from_pretrained(
-            model_config.model_name, cache_dir=os.environ.get("MODEL_DIR", None)
+            model_config.model_name,
+            cache_dir=os.environ.get("MODEL_DIR", None)
         )
 
     # Guideline
     guideline = return_guideline(
-        task_config=task_config, dataset_name=dataset_config.dataset_name, data_path=save_config.data_path
+        task_config=task_config,
+        dataset_name=dataset_config.dataset_name,
+        data_path=save_config.data_path
     )
 
     to_save = list()
@@ -72,19 +100,17 @@ def main():
 
     # Resume
     start_idx = 0
-    if os.path.exists(os.path.join(save_config.save_path, f"{save_config.file_name}.pk")):
-        log("Found existing file! Loading progress...")
-        resume_dict = pickle_load(os.path.join(save_config.save_path, f"{save_config.file_name}.pk"))
-        to_save = resume_dict["question"]
+    if os.path.exists(os.path.join(save_config.save_path, f'{save_config.file_name}.pk')):
+        log('Found existing file! Loading progress...')
+        resume_dict = pickle_load(os.path.join(save_config.save_path, f'{save_config.file_name}.pk'))
+        to_save = resume_dict['question']
         start_idx = len(to_save)
 
     # Dataloader
-    if task_config.task_name == "cefr":
+    if task_config.task_name == 'cefr':
         dataset = load_dataset(
             "csv",
-            data_files={
-                "test": f"{save_config.data_path}/assets/vocab_processed/{dataset_config.dataset_name}_{(task_config.cefr_level).lower()}.csv"
-            },
+            data_files={"test": f'{save_config.data_path}/assets/vocab_processed/{dataset_config.dataset_name}_{(task_config.cefr_level).lower()}.csv'},
             split="test",
         )
 
@@ -94,13 +120,14 @@ def main():
 
         dataloader = DataLoader(dataset, generation_config.batch_size, shuffle=False)
 
-    elif task_config.task_name == "L1":
-        cefr_data_path = ("/").join(save_config.save_path.split("/")[:-2])
+    elif task_config.task_name == 'L1':
+        # Benchmark L1 mode (depends on CEFR CSV assets)
+        cefr_data_path = ('/').join(save_config.save_path.split('/')[:-2])
 
         dataset = load_dataset(
             "csv",
-            data_files={"test": f"{cefr_data_path}/assets/cefr/{dataset_config.dataset_name}/{task_config.cefr_level}.csv"},
-            split="test",
+            data_files={"test": f'{cefr_data_path}/assets/cefr/{dataset_config.dataset_name}/{task_config.cefr_level}.csv'},
+            split='test',
         )
 
         if generation_config.rerun is not None:
@@ -109,59 +136,104 @@ def main():
 
         dataloader = DataLoader(dataset, generation_config.batch_size, shuffle=False)
 
-    elif task_config.task_name == "english_dialect":
+    elif task_config.task_name in ['english_dialect', 'openended_cefr', 'openended_l1']:
+        # Open-ended / dialect mode (jsonl datasets) — no CEFR assets needed
         dataloader = return_dataloader(
-            dataset_config=dataset_config, generation_config=generation_config, start_idx=start_idx
+            dataset_config=dataset_config,
+            generation_config=generation_config,
+            start_idx=start_idx
         )
+    else:
+        raise NotImplementedError(f"Unknown task_name: {task_config.task_name}")
 
     # Sampling Parameters
     sampling_params = {
-        "temperature": generation_config.temperature,
-        "top_p": generation_config.top_p,
-        "max_tokens": generation_config.max_tokens,
+        'temperature': generation_config.temperature,
+        'top_p': generation_config.top_p,
+        'max_tokens': generation_config.max_tokens,
     }
 
     for it, sample in enumerate(tqdm(dataloader)):
-        # Question
         key = QUESTION_KEY_ID[dataset_config.dataset_name]
-        sentence = sample[key]
 
-        # mt-bench: turns is list[list[str]] in a batch -> join into one string per example
-        if dataset_config.dataset_name == "mt-bench":
-            sentence = ["\n".join(turn_list) for turn_list in sentence]
+        if dataset_config.dataset_name == 'mt-bench':
+            # batch_turns: list[list[str]]
+            batch_turns = sample[key]
 
-        sentence = [re.sub(r"_{2,}", "<blank>", s) for s in sentence]
+            # Flatten all turns in the batch
+            flat = []
+            owner = []  # (example_index, turn_index)
+            for ex_i, turns in enumerate(batch_turns):
+                for t_i, t in enumerate(turns):
+                    t = "" if t is None else t
+                    flat.append(re.sub(r'_{2,}', '<blank>', t))
+                    owner.append((ex_i, t_i))
 
-        if model_config.model_name.split("/")[0] == "azure":
-            iter_result = openai_transformation(
-                sentence, guideline, client, sampling_params, task_config, model_config
-            )
+            # Transform flattened turns
+            if use_openai_api:
+                # For OpenAI chat API, transform one turn at a time (openai_transformation expects sentence=[str])
+                flat_results = []
+                for s in flat:
+                    flat_results.extend(
+                        openai_transformation([s], guideline, client, sampling_params, task_config, model_config)
+                    )
+            else:
+                flat_results = transformation(flat, guideline, client, tokenizer, sampling_params, task_config, model_config)
+
+            # Regroup
+            regrouped = [[] for _ in range(len(batch_turns))]
+            for (ex_i, t_i), out in zip(owner, flat_results):
+                while len(regrouped[ex_i]) <= t_i:
+                    regrouped[ex_i].append("")
+                regrouped[ex_i][t_i] = out['final_sentence']
+
+            # Store one record per example; keep final_turns for saver
+            iter_result = []
+            for ex_i in range(len(batch_turns)):
+                iter_result.append({
+                    'orig_sentence': batch_turns[ex_i],
+                    'whole_response': [],
+                    'mid_transformed_sentences': [],
+                    'judge_repsonse': [],
+                    'applied_rules': [],
+                    'transformed_sentences': [],
+                    'final_sentence': "\n".join(regrouped[ex_i]),
+                    'final_turns': regrouped[ex_i],
+                })
+
         else:
-            iter_result = transformation(
-                sentence, guideline, client, tokenizer, sampling_params, task_config, model_config
-            )
+            sentence = sample[key]
+            # sanitize None
+            sentence = [("" if s is None else s) for s in sentence]
+            sentence = [re.sub(r'_{2,}', '<blank>', s) for s in sentence]
+
+            if use_openai_api or (model_config.model_name.split('/')[0] == 'azure'):
+                iter_result = openai_transformation(sentence, guideline, client, sampling_params, task_config, model_config)
+            else:
+                iter_result = transformation(sentence, guideline, client, tokenizer, sampling_params, task_config, model_config)
 
         to_save.extend(iter_result)
 
         if dataset_config.dataset_name in choice_transform_dataset:
-            # choices transform
-            for choice_num, sentence in enumerate(sample["choices"]["text"]):
-                iter_result = transformation(
-                    sentence, guideline, client, tokenizer, sampling_params, task_config, model_config
-                )
-                to_save_choice[choice_num].extend(iter_result)
+            # choices transform (kept as-is; may require dataset-specific handling)
+            for choice_num, sentence in enumerate(sample['choices']['text']):
+                if use_openai_api or (model_config.model_name.split('/')[0] == 'azure'):
+                    iter_choice = openai_transformation(sentence, guideline, client, sampling_params, task_config, model_config)
+                else:
+                    iter_choice = transformation(sentence, guideline, client, tokenizer, sampling_params, task_config, model_config)
+                to_save_choice[choice_num].extend(iter_choice)
 
-            to_save_dict = {"question": to_save, "choices": to_save_choice}
-
+            to_save_dict = {
+                'question': to_save,
+                'choices': to_save_choice
+            }
         else:
-            to_save_dict = {"question": to_save}
+            to_save_dict = {'question': to_save}
 
         if generation_config.rerun is None:
-            pickle_save(os.path.join(save_config.save_path, f"{save_config.file_name}.pk"), to_save_dict)
-        elif generation_config.rerun is not None:
-            pickle_save(
-                os.path.join(save_config.save_path, f"{save_config.file_name}_rerun.pk"), to_save_dict
-            )
+            pickle_save(os.path.join(save_config.save_path, f'{save_config.file_name}.pk'), to_save_dict)
+        else:
+            pickle_save(os.path.join(save_config.save_path, f'{save_config.file_name}_rerun.pk'), to_save_dict)
 
         save_func(to_save_dict, save_config, dataset_config, generation_config, task_config)
 
