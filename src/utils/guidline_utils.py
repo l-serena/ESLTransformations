@@ -101,12 +101,38 @@ def extract_guideline_openended_cefr(guideline: str):
     return guideline_instruction, few_shot_example
 
 
+def _pick_extractor_for_guideline_text(guideline: str):
+    """
+    Auto-detect the guideline format from its text.
+    This is needed when a task mixes multiple guideline sources (e.g., CEFR + L1 for ESL varieties).
+    """
+    if guideline is None:
+        return extract_guideline_dialect
+
+    # L1 guideline file uses '---' separators + "Input Sentence 1:"
+    if ('---' in guideline) and ('Input Sentence 1:' in guideline or '**Input Sentence 1:**' in guideline):
+        return extract_guideline_l1
+
+    # Original dialect/cefr guideline JSON uses '### Example'
+    if '\n### Example\n' in guideline:
+        return extract_guideline_dialect
+
+    # Built-in openended_cefr guidelines use "Input:" / "Output:"
+    if re.search(r"(?im)^Input:\s*", guideline) and re.search(r"(?im)^Output:\s*", guideline):
+        return extract_guideline_openended_cefr
+
+    # Fallback: treat as dialect-style (instruction-only) if nothing else matches
+    return extract_guideline_dialect
+
+
 def extract_guideline_examples(guideline, task):
     """
     guideline is a string (guideline text).
     task selects the parser.
     """
-    if task == 'L1':
+    if task in {'openended_esl'}:
+        extract_func = _pick_extractor_for_guideline_text(guideline)
+    elif task == 'L1':
         extract_func = extract_guideline_l1
     elif task == 'openended_l1':
         # Reuse existing L1 guideline format (python_grammar_error.json)
@@ -116,7 +142,8 @@ def extract_guideline_examples(guideline, task):
     elif task == 'cefr':
         extract_func = extract_guideline_dialect
     elif task == 'openended_cefr':
-        extract_func = extract_guideline_openended_cefr
+        # openended_cefr now uses the same generated guideline JSON format ("### Example") as benchmark CEFR.
+        extract_func = extract_guideline_dialect
     else:
         log(f'Please double check your taks, we got {task}', level='error')
         raise NotImplementedError

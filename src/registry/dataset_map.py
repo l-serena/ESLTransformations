@@ -43,28 +43,78 @@ def _select(ds, rerun_index=None, start_idx=None):
     return ds
 
 
-def load_ifeval(batch_size, rerun_index=None, start_idx=None):
+def _openended_collate_fn(batch):
+    """
+    Open-ended JSONL rows often include variable-length list fields (e.g., instruction_id_list, kwargs).
+    The default PyTorch collator tries to stack/align them and can fail.
+    This collator keeps everything as simple Python lists.
+    """
+    if not batch:
+        return {}
+    keys = batch[0].keys()
+    return {k: [ex.get(k) for ex in batch] for k in keys}
+
+
+def _pick_openended_jsonl(dataset_name: str, sampling: bool) -> str:
+    """
+    Resolve the JSONL path for an open-ended dataset.
+
+    If sampling=True, prefer an existing small sample file if present.
+    """
     data_path = os.environ.get("DATA_PATH", ".")
-    path = os.path.join(data_path, "datasets", "ifeval", "test.jsonl")
+    base_dir = os.path.join(data_path, "datasets", dataset_name)
+
+    if dataset_name == "alpacafarm":
+        # Repo includes multiple sample files; prefer the smallest first.
+        if sampling:
+            for fname in ("sample3.jsonl", "sample50.jsonl", "sample.jsonl", "test.jsonl"):
+                p = os.path.join(base_dir, fname)
+                if os.path.exists(p):
+                    return p
+        return os.path.join(base_dir, "sample50.jsonl")
+
+    # ifeval / mt-bench: default is test.jsonl; if sampling, use sample*.jsonl if user created it
+    if sampling:
+        for fname in ("sample.jsonl", "sample10.jsonl", "sample3.jsonl", "sample50.jsonl", "test.jsonl"):
+            p = os.path.join(base_dir, fname)
+            if os.path.exists(p):
+                return p
+
+    return os.path.join(base_dir, "test.jsonl")
+
+
+def load_openended_dataset(dataset_name: str, sampling: bool):
+    path = _pick_openended_jsonl(dataset_name, sampling=sampling)
+    return load_dataset("json", data_files={"test": path}, split="test")
+
+
+def load_ifeval(batch_size, rerun_index=None, start_idx=None, sampling: bool = False):
+    data_path = os.environ.get("DATA_PATH", ".")
+    path = _pick_openended_jsonl("ifeval", sampling=sampling)
     ds = load_dataset("json", data_files={"test": path}, split="test")
     ds = _select(ds, rerun_index, start_idx)
-    return DataLoader(ds, batch_size=batch_size, shuffle=False)
+    # If user asked for sampling but only test.jsonl exists, still keep runs small.
+    if sampling and ("test.jsonl" in os.path.basename(path)) and len(ds) > 10:
+        ds = ds.select(range(10))
+    return DataLoader(ds, batch_size=batch_size, shuffle=False, collate_fn=_openended_collate_fn)
 
 
-def load_alpacafarm(batch_size, rerun_index=None, start_idx=None):
+def load_alpacafarm(batch_size, rerun_index=None, start_idx=None, sampling: bool = False):
     data_path = os.environ.get("DATA_PATH", ".")
-    path = os.path.join(data_path, "datasets", "alpacafarm", "sample50.jsonl")
+    path = _pick_openended_jsonl("alpacafarm", sampling=sampling)
     ds = load_dataset("json", data_files={"test": path}, split="test")
     ds = _select(ds, rerun_index, start_idx)
-    return DataLoader(ds, batch_size=batch_size, shuffle=False)
+    return DataLoader(ds, batch_size=batch_size, shuffle=False, collate_fn=_openended_collate_fn)
 
 
-def load_mt_bench(batch_size, rerun_index=None, start_idx=None):
+def load_mt_bench(batch_size, rerun_index=None, start_idx=None, sampling: bool = False):
     data_path = os.environ.get("DATA_PATH", ".")
-    path = os.path.join(data_path, "datasets", "mt-bench", "test.jsonl")
+    path = _pick_openended_jsonl("mt-bench", sampling=sampling)
     ds = load_dataset("json", data_files={"test": path}, split="test")
     ds = _select(ds, rerun_index, start_idx)
-    return DataLoader(ds, batch_size=batch_size, shuffle=False)
+    if sampling and ("test.jsonl" in os.path.basename(path)) and len(ds) > 10:
+        ds = ds.select(range(10))
+    return DataLoader(ds, batch_size=batch_size, shuffle=False, collate_fn=_openended_collate_fn)
 
 
 # Function definition of each benchmark
@@ -98,9 +148,10 @@ LOAD_TEST_DATASET = {
     'winogrande': load_dataset('allenai/winogrande', split='validation', trust_remote_code=True, name='winogrande_m', cache_dir=os.environ.get("DATA_DIR", None)),
 
     # Open-ended (local JSONL)
-    'ifeval': load_dataset("json", data_files={"test": os.path.join(os.environ.get("DATA_PATH", "."), "datasets", "ifeval", "test.jsonl")}, split="test"),
-    'alpacafarm': load_dataset("json", data_files={"test": os.path.join(os.environ.get("DATA_PATH", "."), "datasets", "alpacafarm", "test.jsonl")}, split="test"),
-    'mt-bench': load_dataset("json", data_files={"test": os.path.join(os.environ.get("DATA_PATH", "."), "datasets", "mt-bench", "test.jsonl")}, split="test"),
+    # NOTE: sampling-specific loading is handled in save_func via load_openended_dataset().
+    'ifeval': load_openended_dataset("ifeval", sampling=False),
+    'alpacafarm': load_openended_dataset("alpacafarm", sampling=False),
+    'mt-bench': load_openended_dataset("mt-bench", sampling=False),
 }
 
 

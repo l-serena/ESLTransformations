@@ -138,9 +138,13 @@ def return_guideline(task_config, dataset_name, data_path):
     # Open-ended modes (no external assets)
     # -----------------------------
 
-    # open-ended CEFR: built-in rules, no CEFR files needed
+    # open-ended CEFR: use the SAME extracted CEFR feature set + guideline JSON
+    # as the original benchmark CEFR pipeline, but applied to open-ended datasets.
     if (task_config.task_name == "openended_cefr") and (task_config.cefr_level is not None):
-        guideline = _builtin_openended_cefr_guidelines(task_config.cefr_level)
+        cefr_file_path = os.path.join(data_path, 'assets/guidelines/orig_generated_guideline_wo_example_grammar_error.json')
+        guideline_json = json_load(cefr_file_path)
+        cefr_linguistic_features = cefr_feature(task_config.cefr_level)
+        guideline = [(g['feature'][1:-1].strip(), g['guideline']) for g in guideline_json if g['feature'][1:-1].strip() in cefr_linguistic_features]
         assert len(guideline) != 0, colorstr("red", "Guideline Empty!")
         return guideline
 
@@ -150,6 +154,25 @@ def return_guideline(task_config, dataset_name, data_path):
         guideline_json = json_load(l1_file_path)
         l1_linguistic_features = L1_GRAMMARERROR[task_config.l1]
         guideline = [(g['grammar_error'], g['guideline']) for g in guideline_json if g['grammar_error'] in l1_linguistic_features]
+        assert len(guideline) != 0, colorstr("red", "Guideline Empty!")
+        return guideline
+
+    # open-ended ESL variety: CEFR + L1 combined
+    # Feature set = CEFR-level features + L1-specific features (as in Trans-EnV "ESL English" varieties).
+    if (task_config.task_name == "openended_esl") and (task_config.cefr_level is not None) and (task_config.l1 is not None):
+        # CEFR component (same as benchmark CEFR guideline generation file)
+        cefr_file_path = os.path.join(data_path, 'assets/guidelines/orig_generated_guideline_wo_example_grammar_error.json')
+        guideline_json = json_load(cefr_file_path)
+        cefr_linguistic_features = cefr_feature(task_config.cefr_level)
+        cefr_guidelines = [(g['feature'][1:-1].strip(), g['guideline']) for g in guideline_json if g['feature'][1:-1].strip() in cefr_linguistic_features]
+
+        # L1 component (same L1 guideline file and feature list as the benchmark L1 pipeline)
+        l1_file_path = os.path.join(data_path, 'assets/guidelines/python_grammar_error.json')
+        guideline_json = json_load(l1_file_path)
+        l1_linguistic_features = L1_GRAMMARERROR[task_config.l1]
+        l1_guidelines = [(g['grammar_error'], g['guideline']) for g in guideline_json if g['grammar_error'] in l1_linguistic_features]
+
+        guideline = list(cefr_guidelines) + list(l1_guidelines)
         assert len(guideline) != 0, colorstr("red", "Guideline Empty!")
         return guideline
 

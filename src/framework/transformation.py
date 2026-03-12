@@ -5,12 +5,54 @@ from registry.prompt import *
 from utils.guidline_utils import *
 
 
+def _normalize_for_compare(s: str) -> str:
+    if s is None:
+        return ""
+    s = s.strip()
+    if (len(s) >= 2) and ((s[0] == s[-1]) and s[0] in {"'", '"'}):
+        s = s[1:-1].strip()
+    return " ".join(s.split())
+
+
+def _should_accept_transformation(orig: str, transformed: str, raw_response: str) -> bool:
+    if transformed is None:
+        return False
+
+    t = _normalize_for_compare(transformed)
+    o = _normalize_for_compare(orig)
+
+    if not t:
+        return False
+    if t.lower() == "no change" or "(no change)" in t.lower():
+        return False
+    if t == o:
+        return False
+
+    rr = (raw_response or "").lower()
+    if any(p in rr for p in (
+        "not applicable",
+        "no transformation is required",
+        "doesn't meet the criteria",
+        "does not meet the criteria",
+        "cannot be transformed according to the guidelines",
+        "therefore, no transformation is required",
+    )):
+        return False
+
+    return True
+
+
 
 def framework_application(guideline, task):
     guideline = guideline[1]
 
     guideline_instruction, example = extract_guideline_examples(guideline, task)
-    system_message = return_system_message(guideline_instruction)
+    # Keep strict identification for CEFR/ESL guidelines to avoid false positives.
+    # For openended_l1 we keep actionable-only to encourage edits when possible.
+    if task in {"openended_l1"}:
+        system_message = return_actionable_system_message(guideline_instruction)
+    else:
+        system_message = return_system_message(guideline_instruction)
 
     message = [
         {"role": "user", "content": system_message},
@@ -23,7 +65,7 @@ def framework_application(guideline, task):
 
 
 
-def transformation(sentence, guideline, client, tokenizer, sampling_params, task_config, model_config):
+def transformation(sentence, guideline, client, tokenizer, sampling_params, task_config, model_config, one_transform: bool = False, max_rules: int = 0):
     """
     sentence (list of string) where list size is equal to batch size
     """
@@ -38,15 +80,25 @@ def transformation(sentence, guideline, client, tokenizer, sampling_params, task
     mid_transformed_sentences = [[] for _ in range(len(sentence))] # transformed sentences that are transformed by applied rules
     judge_responses = [[] for _ in range(len(sentence))] # judge response to each transformed sentence
     transformed_sentences = [[] for _ in range(len(sentence))] # final transformed sentence
+    done = [False for _ in range(len(sentence))]  # stop early if one_transform
 
     # shuffle guideline
     random.shuffle(guideline)
 
-    for i in range(len(guideline)):
-        feature = guideline[i][0]
-        input_prompt = framework_application(guideline=guideline[i], task=task_config.task_name)
+    rules = guideline
+    if max_rules and max_rules > 0:
+        rules = guideline[:max_rules]
 
-        batch_input = [input_prompt + [{"role": 'user', "content": f"**Original Sentence:** {s}"}] for s in sentence]
+    for i in range(len(rules)):
+        if one_transform and all(done):
+            break
+        feature = rules[i][0]
+        input_prompt = framework_application(guideline=rules[i], task=task_config.task_name)
+
+        batch_input = [
+            input_prompt + [{"role": 'user', "content": f"**Original Sentence:** {s}"}]
+            for s in sentence
+        ]
         chat_batch_input = list()
 
         for input in batch_input:
@@ -91,6 +143,8 @@ def transformation(sentence, guideline, client, tokenizer, sampling_params, task
                     sentence[num] = transformed_sentence
                     applied_rules[num].append(feature)
                     transformed_sentences[num].append(transformed_sentence)
+                    if one_transform:
+                        done[num] = True
         
     iter_result = list()
 
@@ -113,7 +167,10 @@ def openai_framework_application(guideline, task):
     guideline = guideline[1]
 
     guideline_instruction, example = extract_guideline_examples(guideline, task)
-    system_message = return_system_message(guideline_instruction)
+    if task in {"openended_l1"}:
+        system_message = return_actionable_system_message(guideline_instruction)
+    else:
+        system_message = return_system_message(guideline_instruction)
 
     message = [
         {"role": "system", "content": system_message},
@@ -125,60 +182,83 @@ def openai_framework_application(guideline, task):
 
 
 
-def openai_transformation(sentence, guideline, client, sampling_params, task_config, model_config):
-    sentence = sentence[0]
-    orig_sentence = copy.deepcopy(sentence)
+def openai_transformation(sentence, guideline, client, sampling_params, task_config, model_config, one_transform: bool = False, max_rules: int = 0):
+    """
+    sentence: list[str] where list size equals batch size
+    Returns: list[dict] with one result per input sentence (same shape as transformation()).
+    """
+    if type(sentence) is tuple:
+        sentence = list(sentence)
 
-    whole_response = list()
-    applied_rule = list()
-    transformed_sentences = list()
+    orig_sentences = copy.deepcopy(sentence)
 
+    # Per-example accumulators
+    whole_responses = [[] for _ in range(len(sentence))]
+    applied_rules = [[] for _ in range(len(sentence))]
+    transformed_sentences = [[] for _ in range(len(sentence))]
+
+    # Shuffle once per batch for reproducibility of "which rules get tried first"
     random.shuffle(guideline)
 
-    exception_count = 0
+    exception_counts = [0 for _ in range(len(sentence))]
+    done = [False for _ in range(len(sentence))]
 
-    for i in range(len(guideline)):
-        feature = guideline[i][0]
-        input_prompt = openai_framework_application(guideline=guideline[i], task=task_config.task_name)
-        input_prompt = input_prompt + [{"role": 'user', "content": f"**Original Sentence:** {sentence}"}]
+    rules = guideline
+    if max_rules and max_rules > 0:
+        rules = guideline[:max_rules]
 
-        try:
-            responses = client.chat.completions.create(
-                model=model_config.model_name,
-                messages=input_prompt,
-                **sampling_params
-            )
+    for i in range(len(rules)):
+        if one_transform and all(done):
+            break
+        feature = rules[i][0]
 
-            response = responses.choices[0].message.content
-            whole_response.append(response)
+        for ex_i in range(len(sentence)):
+            if one_transform and done[ex_i]:
+                continue
+            input_prompt = openai_framework_application(guideline=rules[i], task=task_config.task_name)
+            input_prompt = input_prompt + [{"role": "user", "content": f"**Original Sentence:** {sentence[ex_i]}"}]
 
-            if response is None:
+            try:
+                responses = client.chat.completions.create(
+                    model=model_config.model_name,
+                    messages=input_prompt,
+                    **sampling_params
+                )
+
+                response = responses.choices[0].message.content
+                whole_responses[ex_i].append(response)
+
+                if response is None:
+                    continue
+
+                transformed_sentence = extract_transformed_sentence(response)
+
+                if _should_accept_transformation(orig_sentences[ex_i], transformed_sentence, response):
+                    sentence[ex_i] = transformed_sentence
+                    applied_rules[ex_i].append(feature)
+                    transformed_sentences[ex_i].append(transformed_sentence)
+                    if one_transform:
+                        done[ex_i] = True
+
+            except Exception as e:
+                # Record the error so runs don't look like "nothing happened".
+                whole_responses[ex_i].append(f"__EXCEPTION__: {type(e).__name__}: {e}")
+                exception_counts[ex_i] += 1
                 continue
 
-            transformed_sentence = extract_transformed_sentence(response)
-            
+    # If a given example errored on every single rule, keep original sentence
+    for ex_i in range(len(sentence)):
+        if exception_counts[ex_i] == len(guideline):
+            sentence[ex_i] = orig_sentences[ex_i]
 
-            if ('no change' in transformed_sentence.lower()) or transformed_sentence.lower() is None:
-                continue
-
-            else:
-                sentence = transformed_sentence
-                applied_rule.append(feature)
-                transformed_sentences.append(transformed_sentence)
-
-        except Exception as e:
-            exception_count += 1
-            continue
-
-    if exception_count == len(guideline):
-        sentence = orig_sentence
-    
-    iter_result = [{
-        'orig_sentence': orig_sentence,
-        'whole_response': whole_response,
-        'applied_rule': applied_rule,
-        'transformed_sentences': transformed_sentences,
-        'final_sentence': sentence
-    }]
+    iter_result = []
+    for ex_i in range(len(sentence)):
+        iter_result.append({
+            'orig_sentence': orig_sentences[ex_i],
+            'whole_response': whole_responses[ex_i],
+            'applied_rule': applied_rules[ex_i],
+            'transformed_sentences': transformed_sentences[ex_i],
+            'final_sentence': sentence[ex_i]
+        })
 
     return iter_result

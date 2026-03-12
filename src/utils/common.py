@@ -4,7 +4,7 @@ import random
 import numpy as np
 
 from framework.data_return import *
-from registry.dataset_map import LOAD_TEST_DATASET
+from registry.dataset_map import LOAD_TEST_DATASET, load_openended_dataset
 
 
 def exponential_backoff(retry_count: int,
@@ -107,7 +107,11 @@ def save_func(to_save, save_config, dataset_config, generation_config, task_conf
     rerun_index = None
     cefr_index = None
 
-    test_dataset = LOAD_TEST_DATASET[dataset_config.dataset_name]
+    # Ensure open-ended save uses the same sampled dataset as the run.
+    if dataset_config.dataset_name in {"ifeval", "alpacafarm", "mt-bench"}:
+        test_dataset = load_openended_dataset(dataset_config.dataset_name, sampling=dataset_config.sampling)
+    else:
+        test_dataset = LOAD_TEST_DATASET[dataset_config.dataset_name]
 
     if generation_config.rerun is not None:
         rerun_index = list(np.load(generation_config.rerun))

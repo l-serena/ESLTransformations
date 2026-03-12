@@ -13,6 +13,12 @@ class GenerationConfig:
     max_tokens: int = field(default=2000, metadata={"help": "max tokens for generation"})
     rerun: str = field(default=None, metadata={"help": "Path to rerun indices (.npy)"})
     one_transform: bool = field(default=False, metadata={"help": "Apply only one transformation", "action": "store_true"})
+    max_rules: int = field(
+        default=200,
+        metadata={
+            "help": "Max guideline rules to try per example (helps avoid very long runs). Set 0 to disable limit."
+        },
+    )
 
 
 # =========================
@@ -76,6 +82,9 @@ class TaskConfig:
                 "L1",
                 # NEW TASK MODE
                 "openended_cefr",
+                "openended_l1",
+                # Open-ended ESL variety: CEFR + L1 combined
+                "openended_esl",
             ],
         },
     )

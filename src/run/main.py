@@ -7,6 +7,7 @@ from tqdm import tqdm
 from datasets import load_dataset
 from collections import defaultdict
 from transformers import AutoTokenizer
+from dataclasses import replace
 
 from torch.utils.data import DataLoader
 
@@ -21,6 +22,8 @@ from utils.model_utils import return_model
 from utils.filesys_utils import pickle_load, pickle_save
 
 choice_transform_dataset = []
+
+OPEN_ENDED_DATASETS = {"ifeval", "alpacafarm", "mt-bench"}
 
 
 def _is_openai_model(model_name: str) -> bool:
@@ -39,6 +42,16 @@ def main():
     if dataset_config.dataset_name is None:
         raise AssertionError(colorstr('red', 'Dataset name should be specified!'))
 
+    # Compatibility: allow closed-end CEFR task flag on open-ended datasets.
+    # Users often run "cefr_a" (task_name=cefr, cefr_level=A) and expect it to work on jsonl datasets too.
+    if (dataset_config.dataset_name in OPEN_ENDED_DATASETS) and (task_config.task_name == "cefr"):
+        task_config = replace(task_config, task_name="openended_cefr")
+
+    # Compatibility: allow benchmark L1 task flag on open-ended datasets.
+    # This keeps the same L1 rewrite behavior, but avoids requiring CEFR benchmark CSV assets.
+    if (dataset_config.dataset_name in OPEN_ENDED_DATASETS) and (task_config.task_name == "L1"):
+        task_config = replace(task_config, task_name="openended_l1")
+
     # NOTE:
     # - Keep original L1 constraint ONLY for the benchmark L1 mode (task_name == 'L1').
     # - openended_l1 should NOT require cefr_level.
@@ -56,6 +69,12 @@ def main():
         log(
             f'Dataset: {colorstr(dataset_config.dataset_name)}, Task: {colorstr(task_config.task_name)}, '
             f'l1: {colorstr(task_config.l1)}, Rerun: {colorstr(bool(generation_config.rerun))}'
+        )
+    elif task_config.task_name == 'openended_esl':
+        log(
+            f'Dataset: {colorstr(dataset_config.dataset_name)}, Task: {colorstr(task_config.task_name)}, '
+            f'CEFR level: {colorstr(task_config.cefr_level)}, l1: {colorstr(task_config.l1)}, '
+            f'Rerun: {colorstr(bool(generation_config.rerun))}'
         )
     elif task_config.task_name == 'english_dialect':
         log(
@@ -136,7 +155,7 @@ def main():
 
         dataloader = DataLoader(dataset, generation_config.batch_size, shuffle=False)
 
-    elif task_config.task_name in ['english_dialect', 'openended_cefr', 'openended_l1']:
+    elif task_config.task_name in ['english_dialect', 'openended_cefr', 'openended_l1', 'openended_esl']:
         # Open-ended / dialect mode (jsonl datasets) — no CEFR assets needed
         dataloader = return_dataloader(
             dataset_config=dataset_config,
@@ -175,10 +194,29 @@ def main():
                 flat_results = []
                 for s in flat:
                     flat_results.extend(
-                        openai_transformation([s], guideline, client, sampling_params, task_config, model_config)
+                        openai_transformation(
+                            [s],
+                            guideline,
+                            client,
+                            sampling_params,
+                            task_config,
+                            model_config,
+                            generation_config.one_transform,
+                            generation_config.max_rules,
+                        )
                     )
             else:
-                flat_results = transformation(flat, guideline, client, tokenizer, sampling_params, task_config, model_config)
+                flat_results = transformation(
+                    flat,
+                    guideline,
+                    client,
+                    tokenizer,
+                    sampling_params,
+                    task_config,
+                    model_config,
+                    generation_config.one_transform,
+                    generation_config.max_rules,
+                )
 
             # Regroup
             regrouped = [[] for _ in range(len(batch_turns))]
@@ -208,9 +246,28 @@ def main():
             sentence = [re.sub(r'_{2,}', '<blank>', s) for s in sentence]
 
             if use_openai_api or (model_config.model_name.split('/')[0] == 'azure'):
-                iter_result = openai_transformation(sentence, guideline, client, sampling_params, task_config, model_config)
+                iter_result = openai_transformation(
+                    sentence,
+                    guideline,
+                    client,
+                    sampling_params,
+                    task_config,
+                    model_config,
+                    generation_config.one_transform,
+                    generation_config.max_rules,
+                )
             else:
-                iter_result = transformation(sentence, guideline, client, tokenizer, sampling_params, task_config, model_config)
+                iter_result = transformation(
+                    sentence,
+                    guideline,
+                    client,
+                    tokenizer,
+                    sampling_params,
+                    task_config,
+                    model_config,
+                    generation_config.one_transform,
+                    generation_config.max_rules,
+                )
 
         to_save.extend(iter_result)
 

@@ -8,6 +8,7 @@ googleapis-common-protos==1.70.0
 vllm==0.7.3
 openai==1.65.5
 transformers==4.49.0
+huggingface-hub==0.34.4
 datasets==3.3.2
 numpy==1.26.4
 pandas==2.2.3

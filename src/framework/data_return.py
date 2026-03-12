@@ -9,7 +9,12 @@ def return_dataloader(dataset_config, generation_config, start_idx=None):
     rerun_index = None
     if generation_config.rerun is not None:
         rerun_index = list(np.load(generation_config.rerun))
-    return DATASET_MAPPING[dataset_config.dataset_name](generation_config.batch_size, rerun_index, start_idx)
+    return DATASET_MAPPING[dataset_config.dataset_name](
+        generation_config.batch_size,
+        rerun_index,
+        start_idx,
+        dataset_config.sampling,
+    )
 
 
 def return_openended(test_dataset, to_save, save_config, rerun_index=None, cefr_index=None):
