@@ -141,11 +141,9 @@ def main():
 
     elif task_config.task_name == 'L1':
         # Benchmark L1 mode (depends on CEFR CSV assets)
-        cefr_data_path = ('/').join(save_config.save_path.split('/')[:-2])
-
         dataset = load_dataset(
             "csv",
-            data_files={"test": f'{cefr_data_path}/assets/cefr/{dataset_config.dataset_name}/{task_config.cefr_level}.csv'},
+            data_files={"test": f'{save_config.data_path}/assets/cefr/{dataset_config.dataset_name}/{task_config.cefr_level}.csv'},
             split='test',
         )
 
