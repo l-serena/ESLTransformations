@@ -217,22 +217,29 @@ def main():
                     generation_config.max_rules,
                 )
 
-            # Regroup
+            # Regroup final_sentence and applied_rules per (ex_i, t_i)
             regrouped = [[] for _ in range(len(batch_turns))]
+            regrouped_rules = [[] for _ in range(len(batch_turns))]
             for (ex_i, t_i), out in zip(owner, flat_results):
                 while len(regrouped[ex_i]) <= t_i:
                     regrouped[ex_i].append("")
+                    regrouped_rules[ex_i].append([])
                 regrouped[ex_i][t_i] = out['final_sentence']
+                regrouped_rules[ex_i][t_i] = out.get('applied_rules', out.get('applied_rule', []))
 
-            # Store one record per example; keep final_turns for saver
+            # Store one record per example; keep final_turns and applied_rules for saver
             iter_result = []
             for ex_i in range(len(batch_turns)):
+                # Flatten rules across turns for one list per example (or keep list-of-lists if preferred)
+                all_rules = []
+                for r in regrouped_rules[ex_i]:
+                    all_rules.extend(r)
                 iter_result.append({
                     'orig_sentence': batch_turns[ex_i],
                     'whole_response': [],
                     'mid_transformed_sentences': [],
                     'judge_repsonse': [],
-                    'applied_rules': [],
+                    'applied_rules': all_rules,
                     'transformed_sentences': [],
                     'final_sentence': "\n".join(regrouped[ex_i]),
                     'final_turns': regrouped[ex_i],

@@ -20,8 +20,10 @@ class GenerationConfig:
         },
     )
     max_workers: int = field(
-        default=10,
-        metadata={"help": "Max concurrent API calls per rule (OpenAI path). Set 1 to disable parallelism."},
+        default=25,
+        metadata={
+            "help": "Max concurrent API calls per rule (OpenAI path). Raise to 50–100 if your tier allows; set 1 for sequential."
+        },
     )
 
 
