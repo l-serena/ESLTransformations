@@ -1,5 +1,6 @@
 import copy
 import random
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from tqdm import tqdm
 
@@ -187,10 +188,26 @@ def openai_framework_application(guideline, task):
 
 
 
-def openai_transformation(sentence, guideline, client, sampling_params, task_config, model_config, one_transform: bool = False, max_rules: int = 0):
+def _openai_transform_one(client, model_name, sampling_params, ex_i, messages, orig_sentence):
+    """One API call for (rule, example). Returns (ex_i, response_text, transformed_or_none, exception_or_none)."""
+    try:
+        responses = client.chat.completions.create(
+            model=model_name,
+            messages=messages,
+            **sampling_params
+        )
+        response = responses.choices[0].message.content
+        transformed = extract_transformed_sentence(response) if response else None
+        return (ex_i, response, transformed, None)
+    except Exception as e:
+        return (ex_i, None, None, e)
+
+
+def openai_transformation(sentence, guideline, client, sampling_params, task_config, model_config, one_transform: bool = False, max_rules: int = 0, max_workers: int = 10):
     """
     sentence: list[str] where list size equals batch size
     Returns: list[dict] with one result per input sentence (same shape as transformation()).
+    max_workers: run up to this many API calls in parallel per rule (1 = sequential).
     """
     if type(sentence) is tuple:
         sentence = list(sentence)
@@ -214,33 +231,67 @@ def openai_transformation(sentence, guideline, client, sampling_params, task_con
 
     total_rules = len(rules)
     rule_iter = tqdm(range(total_rules), desc="Transformations", unit="rule")
+    parallel = max_workers is not None and max_workers > 1
+
     for i in rule_iter:
         rule_iter.set_postfix_str(f"{i + 1}/{total_rules}")
         if one_transform and all(done):
             break
         feature = rules[i][0]
+        base_prompt = openai_framework_application(guideline=rules[i], task=task_config.task_name)
 
+        # Build work items: (ex_i, messages) for examples not yet done
+        work = []
         for ex_i in range(len(sentence)):
             if one_transform and done[ex_i]:
                 continue
-            input_prompt = openai_framework_application(guideline=rules[i], task=task_config.task_name)
-            input_prompt = input_prompt + [{"role": "user", "content": f"**Original Sentence:** {sentence[ex_i]}"}]
+            messages = base_prompt + [{"role": "user", "content": f"**Original Sentence:** {sentence[ex_i]}"}]
+            work.append((ex_i, messages))
 
-            try:
-                responses = client.chat.completions.create(
-                    model=model_config.model_name,
-                    messages=input_prompt,
-                    **sampling_params
+        if not work:
+            continue
+
+        if parallel and len(work) > 1:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {
+                    executor.submit(
+                        _openai_transform_one,
+                        client,
+                        model_config.model_name,
+                        sampling_params,
+                        ex_i,
+                        messages,
+                        orig_sentences[ex_i],
+                    ): ex_i
+                    for ex_i, messages in work
+                }
+                for future in as_completed(futures):
+                    ex_i, response, transformed_sentence, err = future.result()
+                    if err is not None:
+                        whole_responses[ex_i].append(f"__EXCEPTION__: {type(err).__name__}: {err}")
+                        exception_counts[ex_i] += 1
+                        continue
+                    whole_responses[ex_i].append(response)
+                    if response is None:
+                        continue
+                    if _should_accept_transformation(orig_sentences[ex_i], transformed_sentence, response):
+                        sentence[ex_i] = transformed_sentence
+                        applied_rules[ex_i].append(feature)
+                        transformed_sentences[ex_i].append(transformed_sentence)
+                        if one_transform:
+                            done[ex_i] = True
+        else:
+            for ex_i, messages in work:
+                ex_i, response, transformed_sentence, err = _openai_transform_one(
+                    client, model_config.model_name, sampling_params, ex_i, messages, orig_sentences[ex_i]
                 )
-
-                response = responses.choices[0].message.content
+                if err is not None:
+                    whole_responses[ex_i].append(f"__EXCEPTION__: {type(err).__name__}: {err}")
+                    exception_counts[ex_i] += 1
+                    continue
                 whole_responses[ex_i].append(response)
-
                 if response is None:
                     continue
-
-                transformed_sentence = extract_transformed_sentence(response)
-
                 if _should_accept_transformation(orig_sentences[ex_i], transformed_sentence, response):
                     sentence[ex_i] = transformed_sentence
                     applied_rules[ex_i].append(feature)
@@ -248,15 +299,9 @@ def openai_transformation(sentence, guideline, client, sampling_params, task_con
                     if one_transform:
                         done[ex_i] = True
 
-            except Exception as e:
-                # Record the error so runs don't look like "nothing happened".
-                whole_responses[ex_i].append(f"__EXCEPTION__: {type(e).__name__}: {e}")
-                exception_counts[ex_i] += 1
-                continue
-
     # If a given example errored on every single rule, keep original sentence
     for ex_i in range(len(sentence)):
-        if exception_counts[ex_i] == len(guideline):
+        if exception_counts[ex_i] == len(rules):
             sentence[ex_i] = orig_sentences[ex_i]
 
     iter_result = []

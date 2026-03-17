@@ -19,6 +19,10 @@ class GenerationConfig:
             "help": "Max guideline rules to try per example (helps avoid very long runs). Set 0 to disable limit."
         },
     )
+    max_workers: int = field(
+        default=10,
+        metadata={"help": "Max concurrent API calls per rule (OpenAI path). Set 1 to disable parallelism."},
+    )
 
 
 # =========================

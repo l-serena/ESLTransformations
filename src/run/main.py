@@ -191,23 +191,19 @@ def main():
                     flat.append(re.sub(r'_{2,}', '<blank>', t))
                     owner.append((ex_i, t_i))
 
-            # Transform flattened turns
+            # Transform flattened turns (one batch: all turns in parallel per rule)
             if use_openai_api:
-                # For OpenAI chat API, transform one turn at a time (openai_transformation expects sentence=[str])
-                flat_results = []
-                for s in flat:
-                    flat_results.extend(
-                        openai_transformation(
-                            [s],
-                            guideline,
-                            client,
-                            sampling_params,
-                            task_config,
-                            model_config,
-                            generation_config.one_transform,
-                            generation_config.max_rules,
-                        )
-                    )
+                flat_results = openai_transformation(
+                    flat,
+                    guideline,
+                    client,
+                    sampling_params,
+                    task_config,
+                    model_config,
+                    generation_config.one_transform,
+                    generation_config.max_rules,
+                    generation_config.max_workers,
+                )
             else:
                 flat_results = transformation(
                     flat,
@@ -258,6 +254,7 @@ def main():
                     model_config,
                     generation_config.one_transform,
                     generation_config.max_rules,
+                    generation_config.max_workers,
                 )
             else:
                 iter_result = transformation(
@@ -278,7 +275,10 @@ def main():
             # choices transform (kept as-is; may require dataset-specific handling)
             for choice_num, sentence in enumerate(sample['choices']['text']):
                 if use_openai_api or (model_config.model_name.split('/')[0] == 'azure'):
-                    iter_choice = openai_transformation(sentence, guideline, client, sampling_params, task_config, model_config)
+                    iter_choice = openai_transformation(
+                        sentence, guideline, client, sampling_params, task_config, model_config,
+                        max_workers=generation_config.max_workers,
+                    )
                 else:
                     iter_choice = transformation(sentence, guideline, client, tokenizer, sampling_params, task_config, model_config)
                 to_save_choice[choice_num].extend(iter_choice)
