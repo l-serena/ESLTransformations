@@ -76,6 +76,8 @@ def main():
             f'CEFR level: {colorstr(task_config.cefr_level)}, l1: {colorstr(task_config.l1)}, '
             f'Rerun: {colorstr(bool(generation_config.rerun))}'
         )
+    if dataset_config.dataset_name == 'mt-bench' and generation_config.passthrough_mt_bench:
+        log(colorstr('yellow', 'mt-bench passthrough: ON — turns will not be transformed (original prompts kept).'))
     elif task_config.task_name == 'english_dialect':
         log(
             f'Dataset: {colorstr(dataset_config.dataset_name)}, Task: {colorstr(task_config.task_name)}, '
@@ -182,68 +184,84 @@ def main():
             # batch_turns: list[list[str]]
             batch_turns = sample[key]
 
-            # Flatten all turns in the batch
-            flat = []
-            owner = []  # (example_index, turn_index)
-            for ex_i, turns in enumerate(batch_turns):
-                for t_i, t in enumerate(turns):
-                    t = "" if t is None else t
-                    flat.append(re.sub(r'_{2,}', '<blank>', t))
-                    owner.append((ex_i, t_i))
-
-            # Transform flattened turns (one batch: all turns in parallel per rule)
-            if use_openai_api:
-                flat_results = openai_transformation(
-                    flat,
-                    guideline,
-                    client,
-                    sampling_params,
-                    task_config,
-                    model_config,
-                    generation_config.one_transform,
-                    generation_config.max_rules,
-                    generation_config.max_workers,
-                )
+            if generation_config.passthrough_mt_bench:
+                # Do not transform: keep original prompts (ESL rules mangle instructions).
+                iter_result = []
+                for ex_i, turns in enumerate(batch_turns):
+                    kept = ["" if t is None else re.sub(r'_{2,}', '<blank>', t) for t in turns]
+                    iter_result.append({
+                        'orig_sentence': batch_turns[ex_i],
+                        'whole_response': [],
+                        'mid_transformed_sentences': [],
+                        'judge_repsonse': [],
+                        'applied_rules': [],
+                        'transformed_sentences': [],
+                        'final_sentence': "\n".join(kept),
+                        'final_turns': kept,
+                    })
             else:
-                flat_results = transformation(
-                    flat,
-                    guideline,
-                    client,
-                    tokenizer,
-                    sampling_params,
-                    task_config,
-                    model_config,
-                    generation_config.one_transform,
-                    generation_config.max_rules,
-                )
+                # Flatten all turns in the batch
+                flat = []
+                owner = []  # (example_index, turn_index)
+                for ex_i, turns in enumerate(batch_turns):
+                    for t_i, t in enumerate(turns):
+                        t = "" if t is None else t
+                        flat.append(re.sub(r'_{2,}', '<blank>', t))
+                        owner.append((ex_i, t_i))
 
-            # Regroup final_sentence and applied_rules per (ex_i, t_i)
-            regrouped = [[] for _ in range(len(batch_turns))]
-            regrouped_rules = [[] for _ in range(len(batch_turns))]
-            for (ex_i, t_i), out in zip(owner, flat_results):
-                while len(regrouped[ex_i]) <= t_i:
-                    regrouped[ex_i].append("")
-                    regrouped_rules[ex_i].append([])
-                regrouped[ex_i][t_i] = out['final_sentence']
-                regrouped_rules[ex_i][t_i] = out.get('applied_rules', out.get('applied_rule', []))
+                # Transform flattened turns (one batch: all turns in parallel per rule)
+                if use_openai_api:
+                    flat_results = openai_transformation(
+                        flat,
+                        guideline,
+                        client,
+                        sampling_params,
+                        task_config,
+                        model_config,
+                        generation_config.one_transform,
+                        generation_config.max_rules,
+                        generation_config.max_workers,
+                    )
+                else:
+                    flat_results = transformation(
+                        flat,
+                        guideline,
+                        client,
+                        tokenizer,
+                        sampling_params,
+                        task_config,
+                        model_config,
+                        generation_config.one_transform,
+                        generation_config.max_rules,
+                    )
 
-            # Store one record per example; keep final_turns and applied_rules for saver
-            iter_result = []
-            for ex_i in range(len(batch_turns)):
-                # Flatten rules across turns for one list per example (or keep list-of-lists if preferred)
-                all_rules = []
-                for r in regrouped_rules[ex_i]:
-                    all_rules.extend(r)
-                iter_result.append({
-                    'orig_sentence': batch_turns[ex_i],
-                    'whole_response': [],
-                    'mid_transformed_sentences': [],
-                    'judge_repsonse': [],
-                    'applied_rules': all_rules,
-                    'transformed_sentences': [],
-                    'final_sentence': "\n".join(regrouped[ex_i]),
-                    'final_turns': regrouped[ex_i],
-                })
+                # Regroup final_sentence and applied_rules per (ex_i, t_i)
+                regrouped = [[] for _ in range(len(batch_turns))]
+                regrouped_rules = [[] for _ in range(len(batch_turns))]
+                for (ex_i, t_i), out in zip(owner, flat_results):
+                    while len(regrouped[ex_i]) <= t_i:
+                        regrouped[ex_i].append("")
+                        regrouped_rules[ex_i].append([])
+                    regrouped[ex_i][t_i] = out['final_sentence']
+                    regrouped_rules[ex_i][t_i] = out.get('applied_rules', out.get('applied_rule', []))
+
+                # Store one record per example; keep final_turns and applied_rules for saver
+                iter_result = []
+                for ex_i in range(len(batch_turns)):
+                    # Flatten rules across turns for one list per example (or keep list-of-lists if preferred)
+                    all_rules = []
+                    for r in regrouped_rules[ex_i]:
+                        all_rules.extend(r)
+                    iter_result.append({
+                        'orig_sentence': batch_turns[ex_i],
+                        'whole_response': [],
+                        'mid_transformed_sentences': [],
+                        'judge_repsonse': [],
+                        'applied_rules': all_rules,
+                        'transformed_sentences': [],
+                        'final_sentence': "\n".join(regrouped[ex_i]),
+                        'final_turns': regrouped[ex_i],
+                    })
 
         else:
             sentence = sample[key]

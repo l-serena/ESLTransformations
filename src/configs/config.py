@@ -25,6 +25,12 @@ class GenerationConfig:
             "help": "Max concurrent API calls per rule (OpenAI path). Raise to 50–100 if your tier allows; set 1 for sequential."
         },
     )
+    passthrough_mt_bench: bool = field(
+        default=False,
+        metadata={
+            "help": "If set, do not transform mt-bench turns; keep original prompts as turns_transformed (avoids mangling instructions)."
+        },
+    )
 
 
 # =========================

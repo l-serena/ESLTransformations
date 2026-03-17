@@ -93,6 +93,21 @@ source .venv/bin/activate
 python -m vllm.entrypoints.openai.api_server --model google/gemma-2-27b-it --port 6001
 ```
 
+**Multi-GPU (tensor parallelism):** To split the model across multiple GPUs, use `--tensor-parallel-size` and restrict vLLM to those GPUs with `CUDA_VISIBLE_DEVICES`:
+
+```bash
+# Use 4 GPUs (e.g. 0,1,2,3)
+CUDA_VISIBLE_DEVICES=0,1,2,3 python -m vllm.entrypoints.openai.api_server \
+  --model google/gemma-2-27b-it --port 6001 --tensor-parallel-size 4
+
+# Or use all 8 GPUs
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m vllm.entrypoints.openai.api_server \
+  --model google/gemma-2-27b-it --port 6001 --tensor-parallel-size 8
+```
+
+- `--tensor-parallel-size` must equal the number of GPUs in `CUDA_VISIBLE_DEVICES` (e.g. 2, 4, or 8).
+- Use this when the model does not fit on one GPU or to spread load. If other processes use some GPUs, set `CUDA_VISIBLE_DEVICES` to only the IDs you want vLLM to use (e.g. `2,3` then `--tensor-parallel-size 2`).
+
 Wait until you see something like “Application startup complete” and the server is listening on port 6001. Leave this terminal open.
 
 If the cluster has a different hostname per node, note the current hostname (`hostname`) for Step 9.
