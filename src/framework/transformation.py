@@ -17,25 +17,8 @@ def _normalize_for_compare(s: str) -> str:
     return " ".join(s.split())
 
 
-# Phrases that often indicate model hallucination (template output instead of preserving the original).
-_HALLUCINATION_PREFIXES = (
-    "the fact is that",
-    "the problem is that",
-    "the thing is that",
-    "the one that",
-    "the point is that",
-    "it was said that",
-    "none ",
-    "some were not",
-    "some get some",
-    "some find it",
-    "i thinking that",
-    "i am wondering if",
-    "i am suggesting not",
-)
-
-
 def _should_accept_transformation(orig: str, transformed: str, raw_response: str) -> bool:
+    """Accept any non-empty transformation that differs from the original. No extra rejection."""
     if transformed is None:
         return False
 
@@ -49,41 +32,7 @@ def _should_accept_transformation(orig: str, transformed: str, raw_response: str
     if t == o:
         return False
 
-    rr = (raw_response or "").lower()
-    if any(p in rr for p in (
-        "not applicable",
-        "no transformation is required",
-        "doesn't meet the criteria",
-        "does not meet the criteria",
-        "cannot be transformed according to the guidelines",
-        "therefore, no transformation is required",
-    )):
-        return False
-
-    # Anti-hallucination: for long/original text, reject if output collapsed or is template-like.
-    len_orig = len(o)
-    len_t = len(t)
-    if len_orig > 150:
-        if len_t < 0.5 * len_orig:
-            return False
-        t_lower = t.lower()
-        if any(t_lower.startswith(p) or (" " + p) in t_lower for p in _HALLUCINATION_PREFIXES):
-            return False
-
     return True
-
-
-def _long_input_instruction(s: str, task_name: str) -> str:
-    """For long or instruction-like inputs, ask the model to preserve full text and avoid template phrases."""
-    if task_name not in ("openended_esl", "openended_cefr", "openended_l1"):
-        return ""
-    if len(s) <= 200:
-        return ""
-    return (
-        "\n\n[Important: The text above is long or is an instruction. Your output must be the FULL text with only "
-        "the minimal grammatical change from the guideline. Do not summarize, shorten, or replace with a single "
-        "clause or template phrase (e.g. avoid starting with 'The fact is that' or 'The problem is that').]"
-    )
 
 
 def framework_application(guideline, task):
@@ -142,7 +91,7 @@ def transformation(sentence, guideline, client, tokenizer, sampling_params, task
         input_prompt = framework_application(guideline=rules[i], task=task_config.task_name)
 
         batch_input = [
-            input_prompt + [{"role": "user", "content": f"**Original Sentence:** {s}" + _long_input_instruction(s, task_config.task_name)}]
+            input_prompt + [{"role": "user", "content": f"**Original Sentence:** {s}"}]
             for s in sentence
         ]
         chat_batch_input = list()
@@ -185,10 +134,8 @@ def transformation(sentence, guideline, client, tokenizer, sampling_params, task
                 # save judge response
                 judge_responses[num].append(semantic_response.choices[0].message.content.lower())
 
-                # Accept only if semantic judge says meaning preserved AND not an obvious hallucination
-                if "no" in semantic_response.choices[0].message.content.lower() and _should_accept_transformation(
-                    orig_sentence[num], transformed_sentence, response.text
-                ):
+                # Accept whenever we have a valid transformation (no rejection from judge)
+                if _should_accept_transformation(orig_sentence[num], transformed_sentence, response.text):
                     sentence[num] = transformed_sentence
                     applied_rules[num].append(feature)
                     transformed_sentences[num].append(transformed_sentence)
@@ -288,8 +235,7 @@ def openai_transformation(sentence, guideline, client, sampling_params, task_con
         for ex_i in range(len(sentence)):
             if one_transform and done[ex_i]:
                 continue
-            content = f"**Original Sentence:** {sentence[ex_i]}" + _long_input_instruction(sentence[ex_i], task_config.task_name)
-            messages = base_prompt + [{"role": "user", "content": content}]
+            messages = base_prompt + [{"role": "user", "content": f"**Original Sentence:** {sentence[ex_i]}"}]
             work.append((ex_i, messages))
 
         if not work:
@@ -318,12 +264,13 @@ def openai_transformation(sentence, guideline, client, sampling_params, task_con
                     whole_responses[ex_i].append(response)
                     if response is None:
                         continue
-                    if _should_accept_transformation(orig_sentences[ex_i], transformed_sentence, response):
-                        sentence[ex_i] = transformed_sentence
-                        applied_rules[ex_i].append(feature)
-                        transformed_sentences[ex_i].append(transformed_sentence)
-                        if one_transform:
-                            done[ex_i] = True
+                    if not _should_accept_transformation(orig_sentences[ex_i], transformed_sentence, response):
+                        continue
+                    sentence[ex_i] = transformed_sentence
+                    applied_rules[ex_i].append(feature)
+                    transformed_sentences[ex_i].append(transformed_sentence)
+                    if one_transform:
+                        done[ex_i] = True
         else:
             for ex_i, messages in work:
                 ex_i, response, transformed_sentence, err = _openai_transform_one(
@@ -336,12 +283,13 @@ def openai_transformation(sentence, guideline, client, sampling_params, task_con
                 whole_responses[ex_i].append(response)
                 if response is None:
                     continue
-                if _should_accept_transformation(orig_sentences[ex_i], transformed_sentence, response):
-                    sentence[ex_i] = transformed_sentence
-                    applied_rules[ex_i].append(feature)
-                    transformed_sentences[ex_i].append(transformed_sentence)
-                    if one_transform:
-                        done[ex_i] = True
+                if not _should_accept_transformation(orig_sentences[ex_i], transformed_sentence, response):
+                    continue
+                sentence[ex_i] = transformed_sentence
+                applied_rules[ex_i].append(feature)
+                transformed_sentences[ex_i].append(transformed_sentence)
+                if one_transform:
+                    done[ex_i] = True
 
     # If a given example errored on every single rule, keep original sentence
     for ex_i in range(len(sentence)):
