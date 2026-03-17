@@ -1,6 +1,8 @@
 import copy
 import random
 
+from tqdm import tqdm
+
 from registry.prompt import *
 from utils.guidline_utils import *
 
@@ -89,7 +91,10 @@ def transformation(sentence, guideline, client, tokenizer, sampling_params, task
     if max_rules and max_rules > 0:
         rules = guideline[:max_rules]
 
-    for i in range(len(rules)):
+    total_rules = len(rules)
+    rule_iter = tqdm(range(total_rules), desc="Transformations", unit="rule")
+    for i in rule_iter:
+        rule_iter.set_postfix_str(f"{i + 1}/{total_rules}")
         if one_transform and all(done):
             break
         feature = rules[i][0]
@@ -207,7 +212,10 @@ def openai_transformation(sentence, guideline, client, sampling_params, task_con
     if max_rules and max_rules > 0:
         rules = guideline[:max_rules]
 
-    for i in range(len(rules)):
+    total_rules = len(rules)
+    rule_iter = tqdm(range(total_rules), desc="Transformations", unit="rule")
+    for i in rule_iter:
+        rule_iter.set_postfix_str(f"{i + 1}/{total_rules}")
         if one_transform and all(done):
             break
         feature = rules[i][0]
