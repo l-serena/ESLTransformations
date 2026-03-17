@@ -34,11 +34,23 @@ MODEL_DIR=${HF_MODEL_PATH}  # If you don't set, path will be set automatically `
 
 
 ## Execution 🚀
-### Trans-EnV
+### Trans-EnV (local vLLM)
 ```bash
 # Convert MMLU to ESL variety via Trans-EnV
 python src/run/main.py --batch_size 15  --save_path ./outputs/mmlu/l1 --file_name A_arabic --l1 Arabic --task_name L1 --cefr_level A --port_num 6001 --dataset_name mmlu --model_name google/gemma-2-27b-it --tokenizer google/gemma-2-27b-it
 ```
+
+### Trans-EnV with OpenAI (e.g. gpt-4o-mini)
+No local GPU needed. Set your API key, then run with an OpenAI model name:
+```bash
+export OPENAI_API_KEY=sk-...
+
+# Example: mt-bench writing → ESL transforms using gpt-4o-mini
+python src/run/main.py --dataset_name mt-bench --model_name gpt-4o-mini --tokenizer google/gemma-2-9b-it \
+  --task_name openended_esl --cefr_level A --l1 Arabic --save_path ./outputs/mt-bench --file_name esl_mini \
+  --batch_size 15 --data_path .
+```
+The `--tokenizer` is only used for local/vLLM runs; for OpenAI models it can be any HF tokenizer name (e.g. `google/gemma-2-9b-it`).
 
 &nbsp;
 

@@ -46,6 +46,7 @@ class ModelConfig:
                 "meta-llama/Meta-Llama-3-8B-Instruct",
                 "meta-llama/Meta-Llama-3-8B",
                 "google/gemma-2-27b-it",
+                "google/gemma-2-9b-it",
                 "gpt-4o-mini"
             ]
         }

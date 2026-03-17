@@ -73,9 +73,9 @@ def _pick_openended_jsonl(dataset_name: str, sampling: bool) -> str:
                     return p
         return os.path.join(base_dir, "sample50.jsonl")
 
-    # ifeval / mt-bench: default is test.jsonl; if sampling, use sample*.jsonl if user created it
+    # ifeval / mt-bench: default is test.jsonl; if sampling, use smallest sample*.jsonl first
     if sampling:
-        for fname in ("sample.jsonl", "sample10.jsonl", "sample3.jsonl", "sample50.jsonl", "test.jsonl"):
+        for fname in ("sample2.jsonl", "sample3.jsonl", "sample.jsonl", "sample10.jsonl", "sample50.jsonl", "test.jsonl"):
             p = os.path.join(base_dir, fname)
             if os.path.exists(p):
                 return p
