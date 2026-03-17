@@ -93,6 +93,7 @@ def main():
         save_config.file_name += '_sampling'
 
     # Initialize model client
+    log("Connecting to model server...")
     client = return_model(model_config=model_config)
 
     # Decide routing (OpenAI API vs HF/vLLM-style)
@@ -102,12 +103,15 @@ def main():
     # Tokenizer only needed for HF/vLLM-style transformation() (tokenizer.apply_chat_template)
     tokenizer = None
     if (not use_openai_api) and is_hf_model_id and (model_config.model_name.split('/')[0] != 'azure'):
+        log("Loading tokenizer (may download on first run)...")
         tokenizer = AutoTokenizer.from_pretrained(
             model_config.model_name,
             cache_dir=os.environ.get("MODEL_DIR", None)
         )
+        log("Tokenizer ready.")
 
     # Guideline
+    log("Loading guidelines...")
     guideline = return_guideline(
         task_config=task_config,
         dataset_name=dataset_config.dataset_name,
@@ -163,6 +167,7 @@ def main():
     else:
         raise NotImplementedError(f"Unknown task_name: {task_config.task_name}")
 
+    log("Dataset ready. Starting transformation (first batch may take 1–3 min)...")
     # Sampling Parameters
     sampling_params = {
         'temperature': generation_config.temperature,
