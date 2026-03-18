@@ -57,7 +57,18 @@ def framework_application(guideline, task):
 
 
 
-def transformation(sentence, guideline, client, tokenizer, sampling_params, task_config, model_config, one_transform: bool = False, max_rules: int = 0):
+def transformation(
+    sentence,
+    guideline,
+    client,
+    tokenizer,
+    sampling_params,
+    task_config,
+    model_config,
+    one_transform: bool = False,
+    max_rules: int = 0,
+    max_chain_depth: int = 0,
+):
     """
     sentence (list of string) where list size is equal to batch size
     """
@@ -73,6 +84,7 @@ def transformation(sentence, guideline, client, tokenizer, sampling_params, task
     judge_responses = [[] for _ in range(len(sentence))] # judge response to each transformed sentence
     transformed_sentences = [[] for _ in range(len(sentence))] # final transformed sentence
     done = [False for _ in range(len(sentence))]  # stop early if one_transform
+    chain_count = [0 for _ in range(len(sentence))]  # successful transforms per sentence
 
     # shuffle guideline
     random.shuffle(guideline)
@@ -87,12 +99,22 @@ def transformation(sentence, guideline, client, tokenizer, sampling_params, task
         rule_iter.set_postfix_str(f"{i + 1}/{total_rules}")
         if one_transform and all(done):
             break
+        n = len(sentence)
+        active = [
+            j
+            for j in range(n)
+            if not (one_transform and done[j])
+            and (max_chain_depth == 0 or chain_count[j] < max_chain_depth)
+        ]
+        if not active:
+            break
+
         feature = rules[i][0]
         input_prompt = framework_application(guideline=rules[i], task=task_config.task_name)
 
         batch_input = [
-            input_prompt + [{"role": "user", "content": f"**Original Sentence:** {s}"}]
-            for s in sentence
+            input_prompt + [{"role": "user", "content": f"**Original Sentence:** {sentence[j]}"}]
+            for j in active
         ]
         chat_batch_input = list()
 
@@ -110,7 +132,8 @@ def transformation(sentence, guideline, client, tokenizer, sampling_params, task
             **sampling_params
             )
         
-        for num, response in enumerate(responses.choices):
+        for k, num in enumerate(active):
+            response = responses.choices[k]
             # save all responses
             whole_responses[num].append(response.text)
 
@@ -139,6 +162,7 @@ def transformation(sentence, guideline, client, tokenizer, sampling_params, task
                     sentence[num] = transformed_sentence
                     applied_rules[num].append(feature)
                     transformed_sentences[num].append(transformed_sentence)
+                    chain_count[num] += 1
                     if one_transform:
                         done[num] = True
         
@@ -193,7 +217,18 @@ def _openai_transform_one(client, model_name, sampling_params, ex_i, messages, o
         return (ex_i, None, None, e)
 
 
-def openai_transformation(sentence, guideline, client, sampling_params, task_config, model_config, one_transform: bool = False, max_rules: int = 0, max_workers: int = 10):
+def openai_transformation(
+    sentence,
+    guideline,
+    client,
+    sampling_params,
+    task_config,
+    model_config,
+    one_transform: bool = False,
+    max_rules: int = 0,
+    max_workers: int = 10,
+    max_chain_depth: int = 0,
+):
     """
     sentence: list[str] where list size equals batch size
     Returns: list[dict] with one result per input sentence (same shape as transformation()).
@@ -214,6 +249,7 @@ def openai_transformation(sentence, guideline, client, sampling_params, task_con
 
     exception_counts = [0 for _ in range(len(sentence))]
     done = [False for _ in range(len(sentence))]
+    chain_count = [0 for _ in range(len(sentence))]
 
     rules = guideline
     if max_rules and max_rules > 0:
@@ -230,16 +266,18 @@ def openai_transformation(sentence, guideline, client, sampling_params, task_con
         feature = rules[i][0]
         base_prompt = openai_framework_application(guideline=rules[i], task=task_config.task_name)
 
-        # Build work items: (ex_i, messages) for examples not yet done
+        # Build work items: (ex_i, messages) for examples not yet done / under chain cap
         work = []
         for ex_i in range(len(sentence)):
             if one_transform and done[ex_i]:
+                continue
+            if max_chain_depth and chain_count[ex_i] >= max_chain_depth:
                 continue
             messages = base_prompt + [{"role": "user", "content": f"**Original Sentence:** {sentence[ex_i]}"}]
             work.append((ex_i, messages))
 
         if not work:
-            continue
+            break
 
         if parallel and len(work) > 1:
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -269,6 +307,7 @@ def openai_transformation(sentence, guideline, client, sampling_params, task_con
                     sentence[ex_i] = transformed_sentence
                     applied_rules[ex_i].append(feature)
                     transformed_sentences[ex_i].append(transformed_sentence)
+                    chain_count[ex_i] += 1
                     if one_transform:
                         done[ex_i] = True
         else:
@@ -288,6 +327,7 @@ def openai_transformation(sentence, guideline, client, sampling_params, task_con
                 sentence[ex_i] = transformed_sentence
                 applied_rules[ex_i].append(feature)
                 transformed_sentences[ex_i].append(transformed_sentence)
+                chain_count[ex_i] += 1
                 if one_transform:
                     done[ex_i] = True
 

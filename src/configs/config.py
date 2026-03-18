@@ -31,6 +31,13 @@ class GenerationConfig:
             "help": "If set, do not transform mt-bench turns; keep original prompts as turns_transformed (avoids mangling instructions)."
         },
     )
+    max_chain_depth: int = field(
+        default=0,
+        metadata={
+            "help": "Max successful transforms stacked per sentence (0 = unlimited). "
+            "Use 3–8 for open-ended text so many rules do not turn prompts into gibberish."
+        },
+    )
 
 
 # =========================

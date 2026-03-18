@@ -221,6 +221,7 @@ def main():
                         generation_config.one_transform,
                         generation_config.max_rules,
                         generation_config.max_workers,
+                        generation_config.max_chain_depth,
                     )
                 else:
                     flat_results = transformation(
@@ -233,6 +234,7 @@ def main():
                         model_config,
                         generation_config.one_transform,
                         generation_config.max_rules,
+                        generation_config.max_chain_depth,
                     )
 
                 # Regroup final_sentence and applied_rules per (ex_i, t_i)
@@ -280,6 +282,7 @@ def main():
                     generation_config.one_transform,
                     generation_config.max_rules,
                     generation_config.max_workers,
+                    generation_config.max_chain_depth,
                 )
             else:
                 iter_result = transformation(
@@ -292,6 +295,7 @@ def main():
                     model_config,
                     generation_config.one_transform,
                     generation_config.max_rules,
+                    generation_config.max_chain_depth,
                 )
 
         to_save.extend(iter_result)
@@ -303,9 +307,13 @@ def main():
                     iter_choice = openai_transformation(
                         sentence, guideline, client, sampling_params, task_config, model_config,
                         max_workers=generation_config.max_workers,
+                        max_chain_depth=generation_config.max_chain_depth,
                     )
                 else:
-                    iter_choice = transformation(sentence, guideline, client, tokenizer, sampling_params, task_config, model_config)
+                    iter_choice = transformation(
+                        sentence, guideline, client, tokenizer, sampling_params, task_config, model_config,
+                        max_chain_depth=generation_config.max_chain_depth,
+                    )
                 to_save_choice[choice_num].extend(iter_choice)
 
             to_save_dict = {
