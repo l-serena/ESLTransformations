@@ -7,6 +7,15 @@ from utils import colorstr
 from utils.filesys_utils import json_load
 
 
+def _l1_key_for_registry(l1: str) -> str:
+    """Map TaskConfig / CLI L1 label to keys in L1_GRAMMARERROR (python_grammar_error.json)."""
+    if l1 is None:
+        raise ValueError("l1 is required")
+    # Config uses "Mandarin"; registry / paper corpora use "Chinese-Mandarin"
+    aliases = {"Mandarin": "Chinese-Mandarin"}
+    return aliases.get(l1, l1)
+
+
 def dialect_feature(dialect, data_path):
     ewave = pd.read_csv(os.path.join(data_path, 'ewave/ewave.csv'))
     linguistic_features = ewave[(ewave['Language_ID'] == dialect) & (ewave['Value'] == 'A')]['Parameter_ID'].tolist()
@@ -152,7 +161,7 @@ def return_guideline(task_config, dataset_name, data_path):
     if (task_config.task_name == "openended_l1") and (task_config.l1 is not None):
         l1_file_path = os.path.join(data_path, 'assets/guidelines/python_grammar_error.json')
         guideline_json = json_load(l1_file_path)
-        l1_linguistic_features = L1_GRAMMARERROR[task_config.l1]
+        l1_linguistic_features = L1_GRAMMARERROR[_l1_key_for_registry(task_config.l1)]
         guideline = [(g['grammar_error'], g['guideline']) for g in guideline_json if g['grammar_error'] in l1_linguistic_features]
         assert len(guideline) != 0, colorstr("red", "Guideline Empty!")
         return guideline
@@ -169,7 +178,7 @@ def return_guideline(task_config, dataset_name, data_path):
         # L1 component (same L1 guideline file and feature list as the benchmark L1 pipeline)
         l1_file_path = os.path.join(data_path, 'assets/guidelines/python_grammar_error.json')
         guideline_json = json_load(l1_file_path)
-        l1_linguistic_features = L1_GRAMMARERROR[task_config.l1]
+        l1_linguistic_features = L1_GRAMMARERROR[_l1_key_for_registry(task_config.l1)]
         l1_guidelines = [(g['grammar_error'], g['guideline']) for g in guideline_json if g['grammar_error'] in l1_linguistic_features]
 
         guideline = list(cefr_guidelines) + list(l1_guidelines)
@@ -196,7 +205,7 @@ def return_guideline(task_config, dataset_name, data_path):
         # features at that proficiency (e.g. CEFR A + Arabic L1). When cefr_level is set, merge both pools.
         l1_file_path = os.path.join(data_path, 'assets/guidelines/python_grammar_error.json')
         guideline_json = json_load(l1_file_path)
-        l1_linguistic_features = L1_GRAMMARERROR[task_config.l1]
+        l1_linguistic_features = L1_GRAMMARERROR[_l1_key_for_registry(task_config.l1)]
         l1_guidelines = [(g['grammar_error'], g['guideline']) for g in guideline_json if g['grammar_error'] in l1_linguistic_features]
 
         if task_config.cefr_level is not None:
