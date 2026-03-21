@@ -1,16 +1,17 @@
 def return_identification_system_message(guideline_instruction): 
     return f'''
-    Your task is to evaluate if the below feature is applicable to the given sentece by following the guideline.
+    Your task is to evaluate if the below feature is applicable to the given sentence by following the guideline.
 
     {guideline_instruction}
 
     ### Steps to Follow:
-    - Answer the identification questions for the linguistic feature with either "yes" or "no."
-    - Answer the questions in a very strict manner leaving no room for potential.
-    - If all answers to the questions are 'yes', generate the final output as "Final answer is 'applicable'", otherwise generate "Final answer is 'inapplicable.'"
+    - You must answer **every** identification question in the guideline, in order, before giving a final verdict.
+    - For each question, respond on its own line with the question number and exactly "yes" or "no" (e.g. "1. yes", "2. no").
+    - After all answers: if every answer is "yes", output "Final answer is 'applicable'"; otherwise output "Final answer is 'inapplicable.'"
+    - Do not skip the identification step or jump straight to the final verdict.
     
     ### Mandatory
-    - Final sentence should be either "Final answer is 'applicable'" or "Final answer is 'inapplicable'".
+    - Final line must be either "Final answer is 'applicable'" or "Final answer is 'inapplicable'".
     '''
 
 
@@ -21,6 +22,7 @@ def return_actionable_system_message(guideline_instruction):
 
     {guideline_instruction}
 
+    - If the guideline includes identification questions, answer each one explicitly (numbered yes/no) before any rewrite; only rewrite if all answers are "yes" per the guideline.
     - Make only the **necessary changes** to apply the linguistic feature, ensuring no loss of information.
     - Provide the final transformed sentence, adhering strictly to the format and structure of the given example.
 
@@ -28,7 +30,7 @@ def return_actionable_system_message(guideline_instruction):
     - Retain any <blank> without modifications.
     - Preserve the structure of the original sentence as much as possible with no information loss.
     - Follow the guideline, not considering standard English grammar.
-    - Final sentence should start with '**Transformed Sentence:**'.
+    - Final line must start with '**Transformed Sentence:**' (with the transformed text or (No change)).
     '''
 
 
@@ -62,22 +64,24 @@ def return_system_message(guideline_instruction):
     {guideline_instruction}
 
     ### Steps to Follow:
-    1. **Identification Phase**: 
-    - Answer the identification questions for the linguistic feature with either "yes" or "no."
-    - Answer the questions in a very strict manner leaving no room for potential especially for <blank>.
-    - Proceed to the next step only if **all** answers are "yes."
-    - Otherwise, stop in identification phase with generating '**Transformed Sentence:** (No change)'.
-    
-    2. **Actionable Changes**: 
+    1. **Identification Phase** (mandatory — do not skip):
+    - You **must** work through **every** identification question in the guideline above, in order, for the given sentence.
+    - In your reply, first write a short header line: `### Identification`
+    - Then list each question by number and answer **exactly** "yes" or "no" on its own line (e.g. `1. yes`, `2. no`). Use the same numbering as in the guideline.
+    - Answer the questions in a strict manner, especially for <blank> placeholders.
+    - **Only after** you have written all identification lines: if **any** answer is "no", your **last** line must be exactly: `**Transformed Sentence:** (No change)` and you must not perform Actionable Changes.
+    - If **all** answers are "yes", continue to step 2 in the same reply (after the identification block).
+
+    2. **Actionable Changes** (only in the same reply, and only if every identification answer was "yes"):
     - Make only the **necessary changes** to apply the linguistic feature, ensuring no loss of information.
-    - Provide the final transformed sentence, adhering strictly to the format and structure of the given example.
-    
+    - End your reply with a single line starting with `**Transformed Sentence:**` followed by the transformed text, matching the format and structure of the given example.
+
     ### Mandatory
     - Retain any <blank> without modifications.
-    - Proceed to Actional Changes only if all answers to the identification questions are 'yes'.
+    - Do not output `**Transformed Sentence:**` until the Identification section is complete.
     - Preserve the structure of the original sentence as much as possible with no information loss.
     - Follow the guideline, not considering standard English grammar.
-    - Final sentence should start with '**Transformed Sentence:**' either with sentence of (No change).
+    - The final line of your reply must be `**Transformed Sentence:** ...` or `**Transformed Sentence:** (No change)`.
     '''
 
 
