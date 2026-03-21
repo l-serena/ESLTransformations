@@ -37,8 +37,10 @@ def return_actionable_system_message(guideline_instruction):
 # rephrase the full instruction text and NOT perform the task (e.g. not write the dialogue).
 OPEN_ENDED_INSTRUCTION_NOTE = """
 Important: The text below is the full task instruction (e.g. "Write a dialogue...", "Given the sentence X, can you ask a question?").
-Your job is to rephrase this entire instruction according to the guideline. Include the whole instruction text in your output.
-Do NOT perform the task (do not write the dialogue, do not answer the question, etc.). Output only the transformed instruction, starting with '**Transformed Sentence:**'.
+Your job is to rephrase this entire instruction according to the guideline so the instruction text itself exhibits the linguistic feature.
+- Apply the guideline by rewriting the instruction; do NOT add meta-instructions telling the user to do something (e.g. do NOT add clauses like "omitting X" or "avoid Y in your response").
+- The output must be the instruction rephrased; do not append extra instructions or constraints.
+- Do NOT perform the task (do not write the dialogue, do not answer the question, etc.). Output only the transformed instruction, starting with '**Transformed Sentence:**'.
 """
 
 
