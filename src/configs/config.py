@@ -14,9 +14,10 @@ class GenerationConfig:
     rerun: str = field(default=None, metadata={"help": "Path to rerun indices (.npy)"})
     one_transform: bool = field(default=False, metadata={"help": "Apply only one transformation", "action": "store_true"})
     max_rules: int = field(
-        default=200,
+        default=0,
         metadata={
-            "help": "Max guideline rules to try per example (helps avoid very long runs). Set 0 to disable limit."
+            "help": "Max guideline rules to try per example. Default 0 = no limit (full guideline list). "
+            "Set a positive integer (e.g. 200) to cap for shorter runs."
         },
     )
     max_workers: int = field(
