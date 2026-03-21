@@ -219,6 +219,11 @@ def save_func(to_save, save_config, dataset_config, generation_config, task_conf
     else:
         test_dataset = LOAD_TEST_DATASET[dataset_config.dataset_name]
 
+    # Match winogrande_dataloader: same subset as the run when sampling.
+    if dataset_config.dataset_name == "winogrande" and getattr(dataset_config, "sampling", False):
+        if len(test_dataset) > 10:
+            test_dataset = test_dataset.select(range(10))
+
     if generation_config.rerun is not None:
         rerun_index = list(np.load(generation_config.rerun))
 
@@ -229,5 +234,9 @@ def save_func(to_save, save_config, dataset_config, generation_config, task_conf
             cefr_index = [int(index) for index in cefr_index]
         except Exception:
             cefr_index = None
+
+    # HuggingFace Winogrande uses row order 0..N-1; vocab_processed indices are for CSV subsets only.
+    if dataset_config.dataset_name == "winogrande":
+        cefr_index = None
 
     return save_mapping[dataset_config.dataset_name](test_dataset, to_save, save_config, rerun_index, cefr_index)

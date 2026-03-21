@@ -4,17 +4,23 @@ import pandas as pd
 
 from registry.dataset_map import DATASET_MAPPING
 
+# Open-ended JSONL loaders take a 4th `sampling` flag; HuggingFace benchmark loaders do not
+# (except winogrande — see winogrande_dataloader).
+_OPEN_ENDED_DATASETS = frozenset({"ifeval", "alpacafarm", "mt-bench"})
+
 
 def return_dataloader(dataset_config, generation_config, start_idx=None):
     rerun_index = None
     if generation_config.rerun is not None:
         rerun_index = list(np.load(generation_config.rerun))
-    return DATASET_MAPPING[dataset_config.dataset_name](
-        generation_config.batch_size,
-        rerun_index,
-        start_idx,
-        dataset_config.sampling,
-    )
+    batch_size = generation_config.batch_size
+    name = dataset_config.dataset_name
+    loader_fn = DATASET_MAPPING[name]
+    if name in _OPEN_ENDED_DATASETS:
+        return loader_fn(batch_size, rerun_index, start_idx, dataset_config.sampling)
+    if name == "winogrande":
+        return loader_fn(batch_size, rerun_index, start_idx, dataset_config.sampling)
+    return loader_fn(batch_size, rerun_index, start_idx)
 
 
 def return_openended(test_dataset, to_save, save_config, rerun_index=None, cefr_index=None):

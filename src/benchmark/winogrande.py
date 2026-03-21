@@ -137,15 +137,24 @@ def extract_answer(outputs):
 
 
 # Winogrande dataloader
-def winogrande_dataloader(batch_size, rerun_index=None, start_idx=None):
-    test_dataset = load_dataset('allenai/winogrande', split='validation', trust_remote_code=True, name='winogrande_m')
+def winogrande_dataloader(batch_size, rerun_index=None, start_idx=None, sampling=False):
+    test_dataset = load_dataset(
+        "allenai/winogrande",
+        "winogrande_m",
+        split="validation",
+        trust_remote_code=True,
+        cache_dir=os.environ.get("DATA_DIR", None),
+    )
 
-    if start_idx is not None:
+    if sampling and len(test_dataset) > 10:
+        test_dataset = test_dataset.select(range(10))
+
+    if start_idx is not None and start_idx > 0:
         test_dataset = test_dataset.skip(start_idx)
 
     if rerun_index is not None:
         test_dataset = test_dataset.select(rerun_index)
-    
+
     test_loader = DataLoader(test_dataset, batch_size, shuffle=False)
-    
+
     return test_loader

@@ -137,7 +137,18 @@ def main():
         )
 
     # Dataloader
-    if task_config.task_name == 'cefr':
+    # Winogrande: full HuggingFace validation (winogrande_m) for dialect / L1 / CEFR — not the CSV asset subsets.
+    if (
+        dataset_config.dataset_name == "winogrande"
+        and task_config.task_name in ("english_dialect", "L1", "cefr")
+    ):
+        dataloader = return_dataloader(
+            dataset_config=dataset_config,
+            generation_config=generation_config,
+            start_idx=start_idx,
+        )
+
+    elif task_config.task_name == 'cefr':
         dataset = load_dataset(
             "csv",
             data_files={"test": f'{save_config.data_path}/assets/vocab_processed/{dataset_config.dataset_name}_{(task_config.cefr_level).lower()}.csv'},
