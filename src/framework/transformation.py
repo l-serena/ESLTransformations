@@ -4,8 +4,22 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from tqdm import tqdm
 
-from registry.prompt import *
+from registry.prompt import (
+    OPEN_ENDED_INSTRUCTION_NOTE,
+    return_actionable_system_message,
+    return_system_message,
+    semantic_check,
+)
 from utils.guidline_utils import *
+
+OPEN_ENDED_TASKS = ("openended_esl", "openended_cefr", "openended_l1")
+
+
+def _user_content_for_sentence(sentence_text: str, task_name: str) -> str:
+    """Build the user message content: for open-ended tasks, stress rephrasing the full instruction only."""
+    if task_name in OPEN_ENDED_TASKS:
+        return OPEN_ENDED_INSTRUCTION_NOTE.strip() + "\n\n**Original instruction (full task text):**\n" + sentence_text
+    return f"**Original Sentence:** {sentence_text}"
 
 
 def _normalize_for_compare(s: str) -> str:
@@ -113,7 +127,7 @@ def transformation(
         input_prompt = framework_application(guideline=rules[i], task=task_config.task_name)
 
         batch_input = [
-            input_prompt + [{"role": "user", "content": f"**Original Sentence:** {sentence[j]}"}]
+            input_prompt + [{"role": "user", "content": _user_content_for_sentence(sentence[j], task_config.task_name)}]
             for j in active
         ]
         chat_batch_input = list()
@@ -273,7 +287,7 @@ def openai_transformation(
                 continue
             if max_chain_depth and chain_count[ex_i] >= max_chain_depth:
                 continue
-            messages = base_prompt + [{"role": "user", "content": f"**Original Sentence:** {sentence[ex_i]}"}]
+            messages = base_prompt + [{"role": "user", "content": _user_content_for_sentence(sentence[ex_i], task_config.task_name)}]
             work.append((ex_i, messages))
 
         if not work:
