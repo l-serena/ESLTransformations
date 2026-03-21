@@ -36,11 +36,22 @@ def return_actionable_system_message(guideline_instruction):
 # When transforming open-ended prompts (ifeval, mt-bench, alpacafarm), we need the model to
 # rephrase the full instruction text and NOT perform the task (e.g. not write the dialogue).
 OPEN_ENDED_INSTRUCTION_NOTE = """
-Important: The text below is the full task instruction (e.g. "Write a dialogue...", "Given the sentence X, can you ask a question?").
+Important: You receive ONE instruction only (a single turn). Transform only this text. Do not answer it or perform the task it describes.
+
+The text below is the full task instruction (e.g. "Compose a blog post...", "Rewrite your previous response...").
 Your job is to rephrase this entire instruction according to the guideline so the instruction text itself exhibits the linguistic feature.
-- Apply the guideline by rewriting the instruction; do NOT add meta-instructions telling the user to do something (e.g. do NOT add clauses like "omitting X" or "avoid Y in your response").
-- The output must be the instruction rephrased; do not append extra instructions or constraints.
-- Do NOT perform the task (do not write the dialogue, do not answer the question, etc.). Output only the transformed instruction, starting with '**Transformed Sentence:**'.
+
+Preserve the same communicative intent and task type as the original:
+- If it is an imperative (Compose, Write, Draft, Rewrite, Ask...), keep it as an imperative-style instruction with the same goal (same topic, format, and constraints).
+- If it is already a question to the user, you may keep question form only if the guideline fits; do NOT replace imperatives with unrelated wh-questions.
+- Keep all concrete requirements from the original (topics, counts, formats, quoted titles, bullet rules, etc.). Do not drop or replace them with generic wording.
+
+Do NOT:
+- Add meta-instructions ("omitting X", "avoid Y in your response") instead of applying the feature in the wording.
+- Append extra instructions or constraints beyond what the guideline requires.
+- Perform the task (no dialogue, no blog post body, no email body).
+
+Output only the transformed instruction, starting with '**Transformed Sentence:**'.
 """
 
 

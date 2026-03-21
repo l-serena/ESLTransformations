@@ -200,7 +200,7 @@ def main():
                         'final_turns': kept,
                     })
             else:
-                # Flatten all turns in the batch
+                # Each turn is transformed independently (separate chain_count / applied_rules per flat index).
                 flat = []
                 owner = []  # (example_index, turn_index)
                 for ex_i, turns in enumerate(batch_turns):
@@ -247,19 +247,15 @@ def main():
                     regrouped[ex_i][t_i] = out['final_sentence']
                     regrouped_rules[ex_i][t_i] = out.get('applied_rules', out.get('applied_rule', []))
 
-                # Store one record per example; keep final_turns and applied_rules for saver
+                # Store one record per example; one transformed string + rule list per turn (parallel to turns / turns_transformed).
                 iter_result = []
                 for ex_i in range(len(batch_turns)):
-                    # Flatten rules across turns for one list per example (or keep list-of-lists if preferred)
-                    all_rules = []
-                    for r in regrouped_rules[ex_i]:
-                        all_rules.extend(r)
                     iter_result.append({
                         'orig_sentence': batch_turns[ex_i],
                         'whole_response': [],
                         'mid_transformed_sentences': [],
                         'judge_repsonse': [],
-                        'applied_rules': all_rules,
+                        'applied_rules': regrouped_rules[ex_i],
                         'transformed_sentences': [],
                         'final_sentence': "\n".join(regrouped[ex_i]),
                         'final_turns': regrouped[ex_i],
