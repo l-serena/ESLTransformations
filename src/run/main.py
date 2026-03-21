@@ -17,7 +17,7 @@ from framework.data_return import return_dataloader
 from framework.transformation import transformation, openai_transformation
 from registry.framework import QUESTION_KEY_ID
 from utils import log, colorstr
-from utils.common import save_func
+from utils.common import save_func, try_resume_openended_from_jsonl
 from utils.model_utils import return_model
 from utils.filesys_utils import pickle_load, pickle_save
 
@@ -123,13 +123,18 @@ def main():
     to_save = list()
     to_save_choice = defaultdict(list)
 
-    # Resume
+    # Resume: prefer .pk; for open-ended JSONL runs, infer completed prefix from .jsonl if no .pk
     start_idx = 0
-    if os.path.exists(os.path.join(save_config.save_path, f'{save_config.file_name}.pk')):
+    pk_path = os.path.join(save_config.save_path, f'{save_config.file_name}.pk')
+    if os.path.exists(pk_path):
         log('Found existing file! Loading progress...')
-        resume_dict = pickle_load(os.path.join(save_config.save_path, f'{save_config.file_name}.pk'))
+        resume_dict = pickle_load(pk_path)
         to_save = resume_dict['question']
         start_idx = len(to_save)
+    elif dataset_config.dataset_name in OPEN_ENDED_DATASETS and generation_config.rerun is None:
+        to_save, start_idx = try_resume_openended_from_jsonl(
+            save_config, dataset_config, generation_config
+        )
 
     # Dataloader
     if task_config.task_name == 'cefr':
@@ -142,6 +147,8 @@ def main():
         if generation_config.rerun is not None:
             rerun_index = list(np.load(generation_config.rerun))
             dataset = dataset.select(rerun_index)
+        elif start_idx > 0:
+            dataset = dataset.select(range(start_idx, len(dataset)))
 
         dataloader = DataLoader(dataset, generation_config.batch_size, shuffle=False)
 
@@ -156,6 +163,8 @@ def main():
         if generation_config.rerun is not None:
             rerun_index = list(np.load(generation_config.rerun))
             dataset = dataset.select(rerun_index)
+        elif start_idx > 0:
+            dataset = dataset.select(range(start_idx, len(dataset)))
 
         dataloader = DataLoader(dataset, generation_config.batch_size, shuffle=False)
 

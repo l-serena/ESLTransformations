@@ -89,6 +89,112 @@ def _save_openended_jsonl(test_dataset, to_save, save_config, rerun_index=None, 
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
 
+def _openended_row_has_transform(row: dict, dataset_name: str) -> bool:
+    """True if this JSONL row was already merged with a transformation (matches _save_openended_jsonl)."""
+    if dataset_name == "mt-bench":
+        v = row.get("turns_transformed")
+        return isinstance(v, list)
+    return "text_transformed" in row and row.get("text_transformed") is not None
+
+
+def _jsonl_row_to_question_item(row: dict, dataset_name: str) -> dict:
+    """Rebuild one `to_save['question']` entry from a merged JSONL row (for resume without .pk)."""
+    applied = row.get("applied_rules", row.get("applied_rule", []))
+    if dataset_name == "mt-bench":
+        turns = row.get("turns") or []
+        ft = list(row.get("turns_transformed") or [])
+        return {
+            "orig_sentence": turns,
+            "whole_response": [],
+            "mid_transformed_sentences": [],
+            "judge_repsonse": [],
+            "applied_rules": applied if isinstance(applied, list) else [],
+            "transformed_sentences": [],
+            "final_turns": ft,
+            "final_sentence": "\n".join(ft),
+        }
+    key_orig = "prompt" if dataset_name == "ifeval" else "instruction"
+    orig = row.get(key_orig, "")
+    return {
+        "orig_sentence": orig,
+        "whole_response": [],
+        "mid_transformed_sentences": [],
+        "judge_repsonse": [],
+        "applied_rules": applied if isinstance(applied, list) else [],
+        "transformed_sentences": [],
+        "final_sentence": row.get("text_transformed", ""),
+    }
+
+
+def try_resume_openended_from_jsonl(save_config, dataset_config, generation_config):
+    """
+    When no `{file_name}.pk` exists, infer how many examples were already written by scanning
+    `{file_name}.jsonl` for a leading prefix of rows that contain transformation fields.
+
+    Skipped when `sampling=True` (dataloader length may not match full JSONL line count) or when
+    `rerun` is set.
+    """
+    from utils import colorstr, log
+
+    if generation_config.rerun is not None:
+        return [], 0
+    if dataset_config.dataset_name not in {"ifeval", "alpacafarm", "mt-bench"}:
+        return [], 0
+    if getattr(dataset_config, "sampling", False):
+        return [], 0
+
+    jsonl_path = os.path.join(save_config.save_path, f"{save_config.file_name}.jsonl")
+    if not os.path.isfile(jsonl_path):
+        return [], 0
+
+    rows = []
+    try:
+        with open(jsonl_path, "r", encoding="utf-8") as f:
+            for line in f:
+                t = line.strip()
+                if t:
+                    rows.append(json.loads(t))
+    except (json.JSONDecodeError, OSError) as e:
+        log(colorstr("yellow", f"Resume: could not read {jsonl_path}: {e}"))
+        return [], 0
+
+    try:
+        ref_ds = load_openended_dataset(dataset_config.dataset_name, sampling=dataset_config.sampling)
+        n_full = len(ref_ds)
+    except Exception as e:
+        log(colorstr("yellow", f"Resume: could not load dataset to verify JSONL length: {e}"))
+        return [], 0
+
+    if len(rows) != n_full:
+        log(
+            colorstr(
+                "yellow",
+                f"Resume: JSONL has {len(rows)} lines but dataset has {n_full}; "
+                f"not inferring resume from {jsonl_path}.",
+            )
+        )
+        return [], 0
+
+    start_idx = 0
+    for r in rows:
+        if _openended_row_has_transform(r, dataset_config.dataset_name):
+            start_idx += 1
+        else:
+            break
+
+    if start_idx == 0:
+        return [], 0
+
+    to_save = [_jsonl_row_to_question_item(rows[i], dataset_config.dataset_name) for i in range(start_idx)]
+    log(
+        colorstr(
+            "green",
+            f"Resume: no .pk found; continuing from JSONL with {start_idx} completed example(s).",
+        )
+    )
+    return to_save, start_idx
+
+
 def save_func(to_save, save_config, dataset_config, generation_config, task_config):
     save_mapping = {
         'mmlu': return_mmlu,
