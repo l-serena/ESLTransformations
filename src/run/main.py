@@ -170,6 +170,9 @@ def main():
         raise NotImplementedError(f"Unknown task_name: {task_config.task_name}")
 
     log("Dataset ready. Starting transformation (first batch may take 1–3 min)...")
+    if generation_config.skip_semantic_check:
+        log(colorstr('yellow', 'Semantic checker (SS) is OFF — Trans-EnV paper default is ON (meaning must be preserved).'))
+    use_semantic_check = not generation_config.skip_semantic_check
     # Sampling Parameters
     sampling_params = {
         'temperature': generation_config.temperature,
@@ -222,6 +225,7 @@ def main():
                                     generation_config.max_rules,
                                     generation_config.max_workers,
                                     generation_config.max_chain_depth,
+                                    use_semantic_check=use_semantic_check,
                                 )[0]
                             )
                         else:
@@ -237,6 +241,7 @@ def main():
                                     generation_config.one_transform,
                                     generation_config.max_rules,
                                     generation_config.max_chain_depth,
+                                    use_semantic_check=use_semantic_check,
                                 )[0]
                             )
 
@@ -290,6 +295,7 @@ def main():
                                 generation_config.max_rules,
                                 generation_config.max_workers,
                                 generation_config.max_chain_depth,
+                                use_semantic_check=use_semantic_check,
                             )[0]
                         )
                     else:
@@ -305,6 +311,7 @@ def main():
                                 generation_config.one_transform,
                                 generation_config.max_rules,
                                 generation_config.max_chain_depth,
+                                use_semantic_check=use_semantic_check,
                             )[0]
                         )
             elif use_openai_api or (model_config.model_name.split('/')[0] == 'azure'):
@@ -319,6 +326,7 @@ def main():
                     generation_config.max_rules,
                     generation_config.max_workers,
                     generation_config.max_chain_depth,
+                    use_semantic_check=use_semantic_check,
                 )
             else:
                 iter_result = transformation(
@@ -332,6 +340,7 @@ def main():
                     generation_config.one_transform,
                     generation_config.max_rules,
                     generation_config.max_chain_depth,
+                    use_semantic_check=use_semantic_check,
                 )
 
         to_save.extend(iter_result)
@@ -342,13 +351,19 @@ def main():
                 if use_openai_api or (model_config.model_name.split('/')[0] == 'azure'):
                     iter_choice = openai_transformation(
                         sentence, guideline, client, sampling_params, task_config, model_config,
-                        max_workers=generation_config.max_workers,
-                        max_chain_depth=generation_config.max_chain_depth,
+                        generation_config.one_transform,
+                        generation_config.max_rules,
+                        generation_config.max_workers,
+                        generation_config.max_chain_depth,
+                        use_semantic_check=use_semantic_check,
                     )
                 else:
                     iter_choice = transformation(
                         sentence, guideline, client, tokenizer, sampling_params, task_config, model_config,
-                        max_chain_depth=generation_config.max_chain_depth,
+                        generation_config.one_transform,
+                        generation_config.max_rules,
+                        generation_config.max_chain_depth,
+                        use_semantic_check=use_semantic_check,
                     )
                 to_save_choice[choice_num].extend(iter_choice)
 

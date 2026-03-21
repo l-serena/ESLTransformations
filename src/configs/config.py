@@ -38,6 +38,13 @@ class GenerationConfig:
             "Use 3–8 for open-ended text so many rules do not turn prompts into gibberish."
         },
     )
+    skip_semantic_check: bool = field(
+        default=False,
+        metadata={
+            "help": "If set, skip the semantic checker (SS) after each transform. "
+            "Default (off) matches Trans-EnV: keep a transform only if SS says meaning is preserved."
+        },
+    )
 
 
 # =========================

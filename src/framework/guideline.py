@@ -192,11 +192,25 @@ def return_guideline(task_config, dataset_name, data_path):
         guideline = [(g['feature'][3:-3], g['guideline']) for g in guideline_json if g['feature'][3:-3] in linguistic_features]
 
     elif (task_config.task_name == 'L1') & (task_config.l1 is not None):
-        # Benchmark L1 (original behavior)
+        # Benchmark L1: Trans-EnV paper — ESL variety ℒ_vi combines CEFR-level features and L1-specific
+        # features at that proficiency (e.g. CEFR A + Arabic L1). When cefr_level is set, merge both pools.
         l1_file_path = os.path.join(data_path, 'assets/guidelines/python_grammar_error.json')
         guideline_json = json_load(l1_file_path)
         l1_linguistic_features = L1_GRAMMARERROR[task_config.l1]
-        guideline = [(g['grammar_error'], g['guideline']) for g in guideline_json if g['grammar_error'] in l1_linguistic_features]
+        l1_guidelines = [(g['grammar_error'], g['guideline']) for g in guideline_json if g['grammar_error'] in l1_linguistic_features]
+
+        if task_config.cefr_level is not None:
+            cefr_file_path = os.path.join(data_path, 'assets/guidelines/orig_generated_guideline_wo_example_grammar_error.json')
+            cefr_json = json_load(cefr_file_path)
+            cefr_linguistic_features = cefr_feature(task_config.cefr_level)
+            cefr_guidelines = [
+                (g['feature'][1:-1].strip(), g['guideline'])
+                for g in cefr_json
+                if g['feature'][1:-1].strip() in cefr_linguistic_features
+            ]
+            guideline = list(cefr_guidelines) + list(l1_guidelines)
+        else:
+            guideline = l1_guidelines
 
     elif (task_config.task_name == 'cefr') & (task_config.cefr_level is not None):
         cefr_file_path = os.path.join(data_path, 'assets/guidelines/orig_generated_guideline_wo_example_grammar_error.json')

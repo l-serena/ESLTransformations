@@ -87,19 +87,28 @@ def return_system_message(guideline_instruction):
 
 
 def semantic_check(sentence1, sentence2):
+    """
+    Trans-EnV semantic checker (SS): after each candidate transformation, SS decides whether
+    meaning is preserved; only passing candidates are kept for subsequent rule applications.
+    """
     return f"""
-    Determine whether the meaning of Sentence 1 is significantly altered or lost in Sentence 2.
-    
-    ### Consideration
-    - All keywords from Sentence 1 should be in Sentence 2.
-    - All numbers in Sentence 1 should match with Sentence 2.
-    - Focus on core information only.
-    - Ignore grammar; it is not a factor for consideration.
-    - Missing or incorrect prepositions should not be considered.
-    - Ignore repetition of phrases. Repetition is not a factor for consideration.
-    - Base your decision solely on whether essential information is missing.
+    You are the semantic checker (SS) in the Trans-EnV pipeline. Sentence 1 is the original text.
+    Sentence 2 is a candidate output after applying a linguistic transformation.
 
-    Respond with either 'yes' or 'no' only.
+    Question: Is the meaning of Sentence 1 **significantly altered, contradicted, or lost** in Sentence 2?
+
+    ### Consideration
+    - All keywords from Sentence 1 should appear in Sentence 2 where they carry essential content.
+    - All numbers in Sentence 1 should match Sentence 2.
+    - Focus on core information and what the reader is asked to believe or do.
+    - Ignore grammar and surface form; non-standard grammar alone is not a loss of meaning.
+    - Missing or incorrect prepositions should not be considered decisive.
+    - Ignore repetition of phrases.
+    - If Sentence 2 negates, reverses, or removes an essential requirement from Sentence 1, answer "yes" (meaning altered/lost).
+
+    Respond with **one word only** on the first line:
+    - **yes** — meaning is significantly altered, contradicted, or lost (this transformation must be **discarded**).
+    - **no** — essential meaning is preserved (this transformation may be **kept**).
 
     Sentence 1: {sentence1}
     Sentence 2: {sentence2}

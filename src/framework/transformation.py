@@ -49,6 +49,45 @@ def _should_accept_transformation(orig: str, transformed: str, raw_response: str
     return True
 
 
+# Trans-EnV paper: semantic checker (SS) runs after each candidate transform; only keep if meaning preserved.
+_SEMANTIC_JUDGE_MAX_TOKENS = 24
+
+
+def _semantic_meaning_preserved(judge_response: str) -> bool:
+    """
+    SS answers whether meaning of Sentence 1 is significantly altered/lost in Sentence 2.
+    'yes' -> altered/lost -> reject candidate. 'no' -> preserved -> accept.
+    """
+    if judge_response is None or not str(judge_response).strip():
+        return False
+    text = str(judge_response).strip().lower()
+    first_line = text.split("\n")[0].strip()
+    parts = first_line.replace(",", " ").split()
+    first_token = parts[0] if parts else ""
+    first_token = first_token.strip(".,;:!?\"'")
+    if first_token.startswith("no"):
+        return True
+    if first_token.startswith("yes"):
+        return False
+    return False
+
+
+def _run_semantic_checker(client, model_name: str, orig: str, transformed: str) -> tuple[str, bool]:
+    """Call SS; return (raw_judge_text, meaning_preserved). On failure, reject candidate."""
+    prompt = semantic_check(orig, transformed)
+    try:
+        r = client.chat.completions.create(
+            model=model_name,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0,
+            max_tokens=_SEMANTIC_JUDGE_MAX_TOKENS,
+        )
+        content = (r.choices[0].message.content or "").strip()
+    except Exception as e:
+        return f"__SEMANTIC_ERROR__: {type(e).__name__}: {e}", False
+    return content, _semantic_meaning_preserved(content)
+
+
 def framework_application(guideline, task):
     guideline = guideline[1]
 
@@ -82,9 +121,12 @@ def transformation(
     one_transform: bool = False,
     max_rules: int = 0,
     max_chain_depth: int = 0,
+    use_semantic_check: bool = True,
 ):
     """
-    sentence (list of string) where list size is equal to batch size
+    sentence (list of string) where list size is equal to batch size.
+    use_semantic_check: if True (default), match Trans-EnV: SS must approve meaning preservation
+    before a transform is retained (paper: only passing SS are used in subsequent steps).
     """
 
     if type(sentence) is tuple:     # tuple이면 list로 바꾸기
@@ -157,30 +199,32 @@ def transformation(
                 continue
 
             transformed_sentence = extract_transformed_sentence(response.text)
-            if ('no change' in transformed_sentence.lower()) or transformed_sentence.lower() is None:
+            if transformed_sentence is None or ("no change" in transformed_sentence.lower()):
                 continue
 
-            else:
-                # save the transformed sentences
-                mid_transformed_sentences[num].append(transformed_sentence)
+            # save candidate (even if SS later rejects — for debugging)
+            mid_transformed_sentences[num].append(transformed_sentence)
 
-                semantic_input_prompt = semantic_check(orig_sentence[num], transformed_sentence)
-                semantic_response = client.chat.completions.create(
-                    model=model_config.model_name,
-                    messages=[{'role': 'user', 'content': semantic_input_prompt}]
+            if not _should_accept_transformation(orig_sentence[num], transformed_sentence, response.text):
+                judge_responses[num].append("(not_candidate)")
+                continue
+
+            if use_semantic_check:
+                judge_raw, preserved = _run_semantic_checker(
+                    client, model_config.model_name, orig_sentence[num], transformed_sentence
                 )
+                judge_responses[num].append(judge_raw)
+                if not preserved:
+                    continue
+            else:
+                judge_responses[num].append("(semantic_check_off)")
 
-                # save judge response
-                judge_responses[num].append(semantic_response.choices[0].message.content.lower())
-
-                # Accept whenever we have a valid transformation (no rejection from judge)
-                if _should_accept_transformation(orig_sentence[num], transformed_sentence, response.text):
-                    sentence[num] = transformed_sentence
-                    applied_rules[num].append(feature)
-                    transformed_sentences[num].append(transformed_sentence)
-                    chain_count[num] += 1
-                    if one_transform:
-                        done[num] = True
+            sentence[num] = transformed_sentence
+            applied_rules[num].append(feature)
+            transformed_sentences[num].append(transformed_sentence)
+            chain_count[num] += 1
+            if one_transform:
+                done[num] = True
         
     iter_result = list()
 
@@ -244,11 +288,13 @@ def openai_transformation(
     max_rules: int = 0,
     max_workers: int = 10,
     max_chain_depth: int = 0,
+    use_semantic_check: bool = True,
 ):
     """
     sentence: list[str] where list size equals batch size
     Returns: list[dict] with one result per input sentence (same shape as transformation()).
     max_workers: run up to this many API calls in parallel per rule (1 = sequential).
+    use_semantic_check: Trans-EnV SS gate (default on); set False to match legacy behavior.
     """
     if type(sentence) is tuple:
         sentence = list(sentence)
@@ -259,6 +305,8 @@ def openai_transformation(
     whole_responses = [[] for _ in range(len(sentence))]
     applied_rules = [[] for _ in range(len(sentence))]
     transformed_sentences = [[] for _ in range(len(sentence))]
+    mid_transformed_sentences = [[] for _ in range(len(sentence))]
+    judge_responses = [[] for _ in range(len(sentence))]
 
     guideline_work = copy.deepcopy(guideline)
     random.shuffle(guideline_work)
@@ -320,6 +368,16 @@ def openai_transformation(
                         continue
                     if not _should_accept_transformation(orig_sentences[ex_i], transformed_sentence, response):
                         continue
+                    mid_transformed_sentences[ex_i].append(transformed_sentence)
+                    if use_semantic_check:
+                        judge_raw, preserved = _run_semantic_checker(
+                            client, model_config.model_name, orig_sentences[ex_i], transformed_sentence
+                        )
+                        judge_responses[ex_i].append(judge_raw)
+                        if not preserved:
+                            continue
+                    else:
+                        judge_responses[ex_i].append("(semantic_check_off)")
                     sentence[ex_i] = transformed_sentence
                     applied_rules[ex_i].append(feature)
                     transformed_sentences[ex_i].append(transformed_sentence)
@@ -340,6 +398,16 @@ def openai_transformation(
                     continue
                 if not _should_accept_transformation(orig_sentences[ex_i], transformed_sentence, response):
                     continue
+                mid_transformed_sentences[ex_i].append(transformed_sentence)
+                if use_semantic_check:
+                    judge_raw, preserved = _run_semantic_checker(
+                        client, model_config.model_name, orig_sentences[ex_i], transformed_sentence
+                    )
+                    judge_responses[ex_i].append(judge_raw)
+                    if not preserved:
+                        continue
+                else:
+                    judge_responses[ex_i].append("(semantic_check_off)")
                 sentence[ex_i] = transformed_sentence
                 applied_rules[ex_i].append(feature)
                 transformed_sentences[ex_i].append(transformed_sentence)
@@ -357,7 +425,10 @@ def openai_transformation(
         iter_result.append({
             'orig_sentence': orig_sentences[ex_i],
             'whole_response': whole_responses[ex_i],
+            'mid_transformed_sentences': mid_transformed_sentences[ex_i],
+            'judge_repsonse': judge_responses[ex_i],
             'applied_rule': applied_rules[ex_i],
+            'applied_rules': applied_rules[ex_i],
             'transformed_sentences': transformed_sentences[ex_i],
             'final_sentence': sentence[ex_i]
         })
