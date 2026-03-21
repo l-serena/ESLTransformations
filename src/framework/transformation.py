@@ -100,12 +100,14 @@ def transformation(
     done = [False for _ in range(len(sentence))]  # stop early if one_transform
     chain_count = [0 for _ in range(len(sentence))]  # successful transforms per sentence
 
-    # shuffle guideline
-    random.shuffle(guideline)
+    # Fresh copy + shuffle each call so caller's guideline list is not mutated and each
+    # run (e.g. one sentence like close-ended) matches the same logic as benchmark batches.
+    guideline_work = copy.deepcopy(guideline)
+    random.shuffle(guideline_work)
 
-    rules = guideline
+    rules = guideline_work
     if max_rules and max_rules > 0:
-        rules = guideline[:max_rules]
+        rules = guideline_work[:max_rules]
 
     total_rules = len(rules)
     rule_iter = tqdm(range(total_rules), desc="Transformations", unit="rule")
@@ -258,16 +260,16 @@ def openai_transformation(
     applied_rules = [[] for _ in range(len(sentence))]
     transformed_sentences = [[] for _ in range(len(sentence))]
 
-    # Shuffle once per batch for reproducibility of "which rules get tried first"
-    random.shuffle(guideline)
+    guideline_work = copy.deepcopy(guideline)
+    random.shuffle(guideline_work)
 
     exception_counts = [0 for _ in range(len(sentence))]
     done = [False for _ in range(len(sentence))]
     chain_count = [0 for _ in range(len(sentence))]
 
-    rules = guideline
+    rules = guideline_work
     if max_rules and max_rules > 0:
-        rules = guideline[:max_rules]
+        rules = guideline_work[:max_rules]
 
     total_rules = len(rules)
     rule_iter = tqdm(range(total_rules), desc="Transformations", unit="rule")

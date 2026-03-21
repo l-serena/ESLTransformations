@@ -200,42 +200,45 @@ def main():
                         'final_turns': kept,
                     })
             else:
-                # Each turn is transformed independently (separate chain_count / applied_rules per flat index).
-                flat = []
+                # One transformation() call per turn (batch size 1), same pathway as close-ended vLLM:
+                # each turn gets its own guideline shuffle and rule loop — no shared multi-turn batch.
+                flat_results = []
                 owner = []  # (example_index, turn_index)
                 for ex_i, turns in enumerate(batch_turns):
                     for t_i, t in enumerate(turns):
                         t = "" if t is None else t
-                        flat.append(re.sub(r'_{2,}', '<blank>', t))
+                        t = re.sub(r'_{2,}', '<blank>', t)
                         owner.append((ex_i, t_i))
-
-                # Transform flattened turns (one batch: all turns in parallel per rule)
-                if use_openai_api:
-                    flat_results = openai_transformation(
-                        flat,
-                        guideline,
-                        client,
-                        sampling_params,
-                        task_config,
-                        model_config,
-                        generation_config.one_transform,
-                        generation_config.max_rules,
-                        generation_config.max_workers,
-                        generation_config.max_chain_depth,
-                    )
-                else:
-                    flat_results = transformation(
-                        flat,
-                        guideline,
-                        client,
-                        tokenizer,
-                        sampling_params,
-                        task_config,
-                        model_config,
-                        generation_config.one_transform,
-                        generation_config.max_rules,
-                        generation_config.max_chain_depth,
-                    )
+                        if use_openai_api:
+                            flat_results.append(
+                                openai_transformation(
+                                    [t],
+                                    guideline,
+                                    client,
+                                    sampling_params,
+                                    task_config,
+                                    model_config,
+                                    generation_config.one_transform,
+                                    generation_config.max_rules,
+                                    generation_config.max_workers,
+                                    generation_config.max_chain_depth,
+                                )[0]
+                            )
+                        else:
+                            flat_results.append(
+                                transformation(
+                                    [t],
+                                    guideline,
+                                    client,
+                                    tokenizer,
+                                    sampling_params,
+                                    task_config,
+                                    model_config,
+                                    generation_config.one_transform,
+                                    generation_config.max_rules,
+                                    generation_config.max_chain_depth,
+                                )[0]
+                            )
 
                 # Regroup final_sentence and applied_rules per (ex_i, t_i)
                 regrouped = [[] for _ in range(len(batch_turns))]
@@ -267,7 +270,44 @@ def main():
             sentence = [("" if s is None else s) for s in sentence]
             sentence = [re.sub(r'_{2,}', '<blank>', s) for s in sentence]
 
-            if use_openai_api or (model_config.model_name.split('/')[0] == 'azure'):
+            # ifeval / alpacafarm: one sentence per transformation() — same vLLM pathway as a single
+            # close-ended item (own guideline shuffle per row). Benchmark cefr/L1 stays batched.
+            openended_jsonl = dataset_config.dataset_name in {"ifeval", "alpacafarm"}
+
+            if openended_jsonl:
+                iter_result = []
+                for single in sentence:
+                    if use_openai_api or (model_config.model_name.split('/')[0] == 'azure'):
+                        iter_result.append(
+                            openai_transformation(
+                                [single],
+                                guideline,
+                                client,
+                                sampling_params,
+                                task_config,
+                                model_config,
+                                generation_config.one_transform,
+                                generation_config.max_rules,
+                                generation_config.max_workers,
+                                generation_config.max_chain_depth,
+                            )[0]
+                        )
+                    else:
+                        iter_result.append(
+                            transformation(
+                                [single],
+                                guideline,
+                                client,
+                                tokenizer,
+                                sampling_params,
+                                task_config,
+                                model_config,
+                                generation_config.one_transform,
+                                generation_config.max_rules,
+                                generation_config.max_chain_depth,
+                            )[0]
+                        )
+            elif use_openai_api or (model_config.model_name.split('/')[0] == 'azure'):
                 iter_result = openai_transformation(
                     sentence,
                     guideline,
