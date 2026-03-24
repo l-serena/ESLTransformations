@@ -71,7 +71,8 @@ def _pick_openended_jsonl(dataset_name: str, sampling: bool) -> str:
                 p = os.path.join(base_dir, fname)
                 if os.path.exists(p):
                     return p
-        return os.path.join(base_dir, "sample50.jsonl")
+        # Full eval: use test.jsonl (Alpaca Farm eval split), not sample50.
+        return os.path.join(base_dir, "test.jsonl")
 
     # ifeval / mt-bench: default is test.jsonl; if sampling, use smallest sample*.jsonl first
     if sampling:
