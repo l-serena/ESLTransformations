@@ -12,6 +12,7 @@ PORT_NUM="${PORT_NUM:-6002}"
 MODEL_NAME="${MODEL_NAME:-google/gemma-2-27b-it}"
 BATCH_SIZE="${BATCH_SIZE:-15}"
 MAX_CHAIN_DEPTH="${MAX_CHAIN_DEPTH:-3}"
+PYTHON="${PYTHON:-python3}"
 
 L1_LANGUAGES=(
   Arabic French German Italian Japanese Mandarin Portuguese Russian Spanish Turkish
@@ -20,7 +21,7 @@ L1_LANGUAGES=(
 echo "=== openended_esl: CEFR A + L1 (max_chain_depth=${MAX_CHAIN_DEPTH}, semantic check ON) ==="
 for l1 in "${L1_LANGUAGES[@]}"; do
   echo "--- L1: $l1 ---"
-  python src/run/main.py \
+  "$PYTHON" src/run/main.py \
     --dataset_name alpacafarm \
     --task_name openended_esl \
     --cefr_level A \

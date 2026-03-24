@@ -137,6 +137,7 @@ dmypy.json
 
 # Experimental Folder
 outputs/*
+scripts
 lightning_logs
 
 # Weights and Biases logs
